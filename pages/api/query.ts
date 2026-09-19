@@ -40,9 +40,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const list = byDoc.get(d.id) || [];
       const all = [...wanted.map((s) => ({ skill: s, sought: "present" as const })), ...excluded.map((s) => ({ skill: s, sought: "absent" as const }))];
       const matchDetail = all.map(({ skill, sought }) => ({ skill, sought, evidence: has(list, skill) || null }));
-      const blockedBy = excluded.map((s) => has(list, s)).filter(good);
-      const ok = wanted.every((s) => good(has(list, s))) && (wanted.length > 0 || excluded.length > 0);
-      const include = wanted.length === 0 && excluded.length > 0 ? blockedBy.length === 0 : ok;
+      // Deterministic boolean filter on canonical evidence:
+      // every wanted skill must have supporting evidence AND no excluded
+      // skill may have supporting evidence.
+      const wantedOk = wanted.every((s) => good(has(list, s)));
+      const excludedOk = excluded.every((s) => !good(has(list, s)));
+      const include = (wanted.length > 0 || excluded.length > 0) && wantedOk && excludedOk;
       return {
         candidateId: d.id, fileName: d.file_name, include,
         detail: matchDetail.map((m) => ({

@@ -71,10 +71,24 @@ export default function Matrix() {
             <div style={{ marginBottom: 16 }}><StatusChip status={cell.ev.status} /></div>
             <Field k="CANDIDATE" v={cell.cand.displayName} />
             <Field k="CURRENT STATUS" v={cell.ev.status} />
-            <Field k="SOURCE DOCUMENT" v={cell.ev.source || "—"} />
+            <div className="eyebrow" style={{ marginTop: 16 }}>DOCUMENT EVIDENCE</div>
+            <Field k="SOURCE DOCUMENT" v={cell.ev.source_doc || cell.ev.source || "—"} />
+            {cell.ev.source_section && <Field k="SOURCE SECTION" v={cell.ev.source_section} />}
             {cell.ev.claim && (<><div className="eyebrow" style={{ marginTop: 16 }}>EVIDENCE</div><div className="quote">“{cell.ev.claim}”</div></>)}
             {cell.ev.observation && (<><div className="eyebrow" style={{ marginTop: 16 }}>INTERPRETATION</div><p style={{ fontSize: 14, color: "#cacaca" }}>{cell.ev.observation}</p></>)}
             {cell.ev.question && (<><div className="eyebrow" style={{ marginTop: 16 }}>VALIDATION TARGET</div><p style={{ fontSize: 14, color: "#cacaca" }}>{cell.ev.question}</p></>)}
+            {(() => {
+              const rows = (state.interviews || []).filter((x: any) => x.candidate_doc_id === cell.cand.id && x.req_key === cell.ev.req_key);
+              if (!rows.length) return null;
+              return (<><div className="eyebrow" style={{ marginTop: 16 }}>INTERVIEW EVIDENCE / {rows.length}</div>
+                {rows.map((x: any) => (
+                  <div key={x.id} style={{ marginBottom: 10 }}>
+                    <div className="font-mono-d" style={{ fontSize: 10, color: "#6a6b6b" }}>{new Date(x.created_at).toLocaleString("en-GB")}</div>
+                    <div style={{ fontSize: 13 }}><b>Q:</b> {x.question}</div>
+                    <div className="quote" style={{ marginTop: 4 }}>“{(x.analysis?.evidence || x.answer || "").slice(0, 300)}”</div>
+                  </div>
+                ))}</>);
+            })()}
             {(cell.ev.status === "NEEDS VALIDATION" || cell.ev.status === "PARTIAL EVIDENCE") && (
               <button className="btn-primary" style={{ marginTop: 20 }}
                 onClick={() => router.push(`/workspace/${id}/interview/${cell.cand.id}?req=${encodeURIComponent(cell.ev.req_key)}`)}>

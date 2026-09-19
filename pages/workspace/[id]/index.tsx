@@ -37,7 +37,20 @@ export default function WorkspaceIngest() {
   const [done, setDone] = useState(false);
 
   const say = (msg: string) => setFeed((f) => [...f.slice(-7), { id: `${Date.now()}-${Math.random()}`, msg }]);
+  const jdReady = (state?.jobDocs || []).length > 0;
+  const candReady = (state?.candidates || []).length > 0;
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  const confirmDoc = async (idToFind: string, kind: "jd" | "resume") => {
+    try {
+      const r = await fetch(`/api/state?workspaceId=${encodeURIComponent(id)}`);
+      const s = await r.json();
+      const ok = kind === "jd"
+        ? (s.jobDocs || []).some((d: any) => d.id === idToFind)
+        : (s.candidates || []).some((c: any) => c.id === idToFind);
+      return { ok, state: s };
+    } catch { return { ok: false, state: null }; }
+  };
 
   const upload = async (file: File, kind: "jd" | "resume") => {
     if (!UUID_RE.test(id || "")) { say("Not a database workspace. Return home and create a new one."); return; }
@@ -50,7 +63,10 @@ export default function WorkspaceIngest() {
       const res = await fetch(kind === "jd" ? "/api/upload-job" : "/api/upload-resume", { method: "POST", body: form });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "upload failed");
-      say(`${file.name} ready.`);
+      const docId = j.id || j.record?.id;
+      const check = await confirmDoc(docId, kind);
+      if (!check.ok) throw new Error("stored but not yet visible — retry in a moment");
+      say(`${file.name} stored and confirmed.`);
       reload();
     } catch (e: any) { say(`${file.name}: ${e.message}`); }
     finally { setBusy(""); }
@@ -80,6 +96,15 @@ export default function WorkspaceIngest() {
             <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>Job description</div>
             <p style={{ color: "#9f9fa0", fontSize: 14, marginTop: 0 }}>Drop a job description here — PDF or supported document — or paste the role text.</p>
             <Dropzone accept=".pdf,.txt" label="Drop a job description here" hint="PDF or text" onFiles={(f) => f[0] && upload(f[0], "jd")} />
+            {(state?.jobDocs || []).map((d: any) => (
+              <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 8 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: "#847dff", color: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600 }}>JD</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.title}</div>
+                </div>
+                <span className="chip" style={{ color: "#64d98b" }}>READY</span>
+              </div>
+            ))}
           </div>
         </div>
         <div>
@@ -107,10 +132,18 @@ export default function WorkspaceIngest() {
         </div>
         {!analyzing && !done && (
           <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
-            <div className="font-mono-d" style={{ fontSize: 12, color: "#9f9fa0" }}>
-              {(state?.requirements.length ? 1 : 0)} ROLE DOC · {state?.candidates.length || 0} CANDIDATES
+            <div>
+              <div className="font-mono-d" style={{ fontSize: 12, color: "#9f9fa0" }}>
+                {(state?.jobDocs?.length ? 1 : 0)} ROLE DOC · {state?.candidates.length || 0} CANDIDATES
+              </div>
+              {(!jdReady || !candReady) && (
+                <div style={{ fontSize: 13, color: "#d9a75f", marginTop: 4 }}>
+                  {!jdReady ? "Upload a job description to enable analysis. " : ""}
+                  {!candReady ? "Add at least one candidate document." : ""}
+                </div>
+              )}
             </div>
-            <button className="btn-primary" onClick={analyze} disabled={busy !== ""}>ANALYZE EVIDENCE →</button>
+            <button className="btn-primary" onClick={analyze} disabled={busy !== "" || !jdReady || !candReady}>ANALYZE EVIDENCE →</button>
           </div>
         )}
         {analyzing && (

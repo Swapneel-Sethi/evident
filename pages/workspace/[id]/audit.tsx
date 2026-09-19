@@ -26,11 +26,17 @@ export default function Audit() {
       subtitle="Chronological record of document processing, AI operations, evidence links and interview updates.">
       <Eyebrow>AUDITABILITY</Eyebrow>
       <div className="card">
-        <Timeline events={state.activity.map((a: any) => ({
-          id: a.id, time: fmtTime(a.created_at),
-          title: `${LABELS[a.event_type] || a.event_type.replace(/_/g, " ").toUpperCase()} — ${(a.event_type || "").replace(/_/g, " ")}`,
-          body: a.payload ? Object.entries(a.payload).slice(0, 3).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v).slice(0, 80) : String(v)}`).join(" · ") : undefined,
-        }))} />
+        <Timeline events={state.activity.map((a: any) => {
+          const { reqKey, req_key, candidateDocId, candidate_doc_id, ...rest } = a.payload || {};
+          void reqKey; void req_key; void candidateDocId; void candidate_doc_id;
+          const body = [a.label, Object.entries(rest).slice(0, 2).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v).slice(0, 80) : String(v)}`).join(" · ")]
+            .filter(Boolean).join(" — ");
+          return {
+            id: a.id, time: fmtTime(a.created_at),
+            title: `${LABELS[a.event_type] || a.event_type.replace(/_/g, " ").toUpperCase()} — ${(a.event_type || "").replace(/_/g, " ")}`,
+            body: body || undefined,
+          };
+        })} />
       </div>
     </Shell>
   );

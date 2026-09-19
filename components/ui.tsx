@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Head from "next/head";
 import { useRouter } from "next/router";
 
 export type WsState = {
   workspace: { id: string; title: string; created_at: string } | null;
   requirements: any[];
+  jobDocs: any[];
   candidates: any[];
   interviews: any[];
   activity: any[];
@@ -91,6 +93,7 @@ export function Shell({ workspaceId, title, subtitle, actions, children }: {
   );
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#0f1011" }}>
+      <Head><title>EVIDENT — {title}</title></Head>
       <aside className="sidebar-d" style={{ width: 248, flexShrink: 0, background: "#090a0b", borderRight: "1px solid rgba(255,255,255,0.06)", position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>{side}</aside>
       {menu && (<><div className="drawer-veil" onClick={() => setMenu(false)} /><div className="drawer" style={{ right: "auto", left: 0, borderLeft: "none", borderRight: "1px solid rgba(255,255,255,0.1)" }}>{side}</div></>)}
       <div style={{ flex: 1, minWidth: 0 }}>

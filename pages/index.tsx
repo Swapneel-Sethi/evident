@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
+import Head from "next/head";
 
 export default function Home() {
   const router = useRouter();
@@ -29,6 +30,7 @@ export default function Home() {
 
   return (
     <div style={{ background: "#0f1011", minHeight: "100vh", color: "#f5f5f7" }}>
+      <Head><title>EVIDENT — Evidence before judgment</title></Head>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "24px 48px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 30, height: 30, borderRadius: 8, background: "#f5f5f7", color: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600 }}>E</div>

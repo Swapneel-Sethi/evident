@@ -55,7 +55,7 @@ export function normalizeMapping(raw: any, fallbackReqs: ReqRow[]): EvRow[] {
       reqKey: req.key,
       requirement: req.name,
       status: normStatus(m.status),
-      claim: String(m.claim || m.evidence || "").slice(0, 800),
+      claim: dequote(String(m.claim || m.evidence || "")).slice(0, 800),
       source: String(m.source || "").slice(0, 300),
       observation: String(m.observation || m.notes || "").slice(0, 500),
       question: String(m.question || m.validationQuestion || "").slice(0, 500),
@@ -75,14 +75,21 @@ export async function persistAnalysis(
       category: r.category, importance: r.importance, description: r.description,
     }], { onConflict: "workspace_id,req_key" });
   }
+  // Canonical gap definition (used identically by Overview, Requirements,
+  // Matrix, Dossier, Report and Audit): PARTIAL EVIDENCE + NEEDS VALIDATION
+  // + CONFLICTING INFORMATION + NO EVIDENCE FOUND.
   let gapCount = 0;
   for (const c of perCandidate) {
     for (const e of c.evidence) {
-      if (e.status === "NEEDS VALIDATION" || e.status === "NO EVIDENCE FOUND") gapCount++;
+      if (e.status !== "EVIDENCE FOUND" && e.status !== "SUPPORTED BY INTERVIEW") gapCount++;
+      const aiSection = String(e.source || "").trim();
+      const isFileLike = !aiSection || /\.pdf$|\.txt$/i.test(aiSection) || aiSection === c.fileName;
       await supabase.from("evidence_states").upsert([{
         workspace_id: workspaceId, candidate_doc_id: c.docId, req_key: e.reqKey,
         requirement: e.requirement, status: e.status, claim: e.claim,
         source: e.source || (e.status === "NO EVIDENCE FOUND" ? "NO SOURCE EVIDENCE FOUND" : c.fileName),
+        source_doc: c.fileName,
+        source_section: isFileLike ? "" : aiSection.slice(0, 200),
         observation: e.observation, question: e.question,
       }], { onConflict: "workspace_id,candidate_doc_id,req_key" });
     }
@@ -98,6 +105,14 @@ export async function audit(workspaceId: string, type: string, payload: any) {
   await supabase.from("audit_events").insert([{ workspace_id: workspaceId, event_type: type, payload }]);
 }
 
+/** Strip one layer of surrounding quotes so UI renders exactly one. */
+export function dequote(s: string): string {
+  const t = String(s || "").trim();
+  if (t.length >= 2 && ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")) || (t.startsWith("\u201c") && t.endsWith("\u201d")))) {
+    return t.slice(1, -1).trim();
+  }
+  return t;
+}
 /** Display name: AI-extracted name wins; else prettified filename. */
 export function prettyName(fileName: string, aiName?: string): string {
   const clean = String(aiName || "").trim();

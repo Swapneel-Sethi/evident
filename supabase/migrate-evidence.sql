@@ -55,3 +55,9 @@ create policy anon_all on interview_responses for all to anon using (true) with 
 grant select, insert, update, delete on job_requirements to anon;
 grant select, insert, update, delete on evidence_states to anon;
 grant select, insert, update, delete on interview_responses to anon;
+
+-- Source traceability split (no invented sections).
+alter table evidence_states add column if not exists source_doc text default '';
+alter table evidence_states add column if not exists source_section text default '';
+update evidence_states es set source_doc = cd.file_name from candidate_documents cd where cd.id = es.candidate_doc_id and (es.source_doc = '' or es.source_doc is null);
+update evidence_states set source_section = source where source <> '' and source <> source_doc;

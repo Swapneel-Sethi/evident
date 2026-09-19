@@ -11,13 +11,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!workspaceId) return res.status(400).json({ error: "Missing workspaceId" });
   if (!isSupabaseConfigured) return res.status(500).json({ error: "Supabase not configured." });
 
-  const [{ data: ws }, { data: reqs }, { data: docs }, { data: ev }, { data: interviews }, { data: events }] = await Promise.all([
+  const [{ data: ws }, { data: reqs }, { data: docs }, { data: ev }, { data: interviews }, { data: events }, { data: jobDocs }] = await Promise.all([
     supabase.from("workspaces").select("id,title,created_at").eq("id", workspaceId).single(),
     supabase.from("job_requirements").select("*").eq("workspace_id", workspaceId).order("created_at"),
     supabase.from("candidate_documents").select("id,file_name,display_name,created_at").eq("workspace_id", workspaceId).order("created_at"),
     supabase.from("evidence_states").select("*").eq("workspace_id", workspaceId),
-    supabase.from("interview_responses").select("id,candidate_doc_id,req_key,question,created_at").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(50),
+    supabase.from("interview_responses").select("*").eq("workspace_id", workspaceId).order("created_at"),
     supabase.from("audit_events").select("id,created_at,event_type,payload").eq("workspace_id", workspaceId).order("created_at", { ascending: false }).limit(50),
+    supabase.from("job_documents").select("id,title,created_at").eq("workspace_id", workspaceId).order("created_at"),
   ]);
 
   const dispName = (d: any) => {
@@ -68,9 +69,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   return res.status(200).json({
     workspace: ws || null,
     requirements: reqs || [],
+    jobDocs: jobDocs || [],
     candidates,
     interviews: interviews || [],
-    activity: events || [],
+    activity: (events || []).map((a: any) => {
+      // Human-readable audit labels: resolve ids to names, never raw keys.
+      const p = a.payload || {};
+      let label = "";
+      if (p.reqKey || p.req_key) {
+        const key = p.reqKey || p.req_key;
+        const evRow = (ev || []).find((e: any) => e.req_key === key);
+        const doc = (docs || []).find((d: any) =>
+          d.id === p.candidateDocId || d.id === p.candidate_doc_id || d.id === evRow?.candidate_doc_id);
+        const who = doc ? dispName(doc) : "";
+        const what = evRow ? evRow.requirement : key;
+        label = [who, what].filter(Boolean).join(" · ");
+      }
+      return { ...a, label };
+    }),
     stats,
     analyzed: (reqs || []).length > 0,
   });

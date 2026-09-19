@@ -37,7 +37,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         evidence: normalizeMapping(DEMO_CANDIDATES[i].evidence.map((e) => ({ ...e, requirementId: slugKey(e.requirement) })), requirements),
       }));
       await persistAnalysis(wid, requirements, perCandidate, "sample-synthetic");
-      return res.status(200).json({ workspaceId: wid, mode: "sample-synthetic" });
+      return res.status(200).json({ workspaceId: wid });
     }
     const { extractJobRequirements, analyzeCandidateOnce } = await import("@/lib/orchestrator");
     const requirements = normalizeRequirements(await extractJobRequirements(DEMO_JD), DEMO_JD);
@@ -50,7 +50,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       perCandidate.push({ docId: d.id, fileName: d.fileName, evidence: normalizeMapping(mapping, requirements) });
     }
     await persistAnalysis(wid, requirements, perCandidate, "sample-ai");
-    return res.status(200).json({ workspaceId: wid, mode: "sample-ai" });
+    return res.status(200).json({ workspaceId: wid });
   } catch (e: any) {
     console.error("Sample error:", e);
     if (e.message?.includes("GEMINI_RATE_LIMITED")) {

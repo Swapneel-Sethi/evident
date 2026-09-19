@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Head from "next/head";
 
 export default function Settings() {
   const [s, setS] = useState<any>(null);
@@ -13,6 +14,7 @@ export default function Settings() {
   );
   return (
     <div style={{ background: "#0f1011", minHeight: "100vh", color: "#f5f5f7" }}>
+      <Head><title>EVIDENT — Settings</title></Head>
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "48px 32px" }}>
         <div className="eyebrow">SYSTEM</div>
         <h1 className="font-serif-d" style={{ fontSize: 40, color: "#fff", margin: "6px 0 20px 0" }}>Settings</h1>

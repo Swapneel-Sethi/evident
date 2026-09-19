@@ -35,7 +35,20 @@ export default function Dossier() {
       </div>
 
       {tab === "evidence" && (
+        <>
+        <div className="card">
+          <Eyebrow>INTERVIEW EVIDENCE / {interviews.length}</Eyebrow>
+          {interviews.length === 0 && <p style={{ color: "#6a6b6b", fontSize: 14 }}>No interview evidence recorded yet.</p>}
+          {interviews.map((x: any, i: number) => (
+            <div key={x.id} style={{ padding: "8px 0", borderTop: i ? "1px solid rgba(255,255,255,0.06)" : "none", fontSize: 14 }}>
+              <div className="font-mono-d" style={{ fontSize: 11, color: "#847dff" }}>{(x.req_key || "").toUpperCase()} · {new Date(x.created_at).toLocaleString("en-GB")}</div>
+              <div style={{ marginTop: 4 }}><b>Q:</b> {x.question}</div>
+              <div className="quote" style={{ marginTop: 6 }}>“{(x.analysis?.evidence || x.answer || "").slice(0, 300)}”</div>
+            </div>
+          ))}
+        </div>
         <div style={{ display: "grid", gap: 12 }}>
+          <Eyebrow>DOCUMENT EVIDENCE</Eyebrow>
           {cand.evidence.map((e: any) => (
             <div key={e.req_key} className="card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -58,6 +71,7 @@ export default function Dossier() {
             </div>
           ))}
         </div>
+        </>
       )}
 
       {tab === "interview" && (
@@ -74,8 +88,18 @@ export default function Dossier() {
           ))}
           {interviews.length > 0 && (
             <div className="card">
-              <Eyebrow>PAST SESSIONS / {interviews.length}</Eyebrow>
-              {interviews.map((x: any) => <div key={x.id} style={{ fontSize: 13, color: "#9f9fa0", padding: "4px 0" }}>{x.question}</div>)}
+              <Eyebrow>SESSION HISTORY / {interviews.length}</Eyebrow>
+              {interviews.map((x: any, i: number) => (
+                <details key={x.id} style={{ padding: "8px 0", borderTop: i ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+                  <summary style={{ fontSize: 14, cursor: "pointer" }}>
+                    <span className="font-mono-d" style={{ fontSize: 11, color: "#6a6b6b" }}>Q{String(i + 1).padStart(2, "0")} · </span>{x.question}
+                  </summary>
+                  <div className="quote" style={{ marginTop: 8 }}>“{x.answer}”</div>
+                  {x.analysis?.notes && <div style={{ fontSize: 13, color: "#9f9fa0", marginTop: 6 }}>Analysis: {x.analysis.notes}</div>}
+                  {x.follow_up && <div style={{ fontSize: 13, color: "#00b3dd", marginTop: 4 }}>Follow-up: {x.follow_up}</div>}
+                  <div className="font-mono-d" style={{ fontSize: 10, color: "#6a6b6b", marginTop: 4 }}>{new Date(x.created_at).toLocaleString("en-GB")}</div>
+                </details>
+              ))}
             </div>
           )}
         </div>

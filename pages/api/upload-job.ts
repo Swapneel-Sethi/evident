@@ -133,6 +133,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const record = insertData && insertData[0];
+    // Name the workspace after the role on first JD upload (replaces default title only).
+    const roleName = title.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+    const { data: wsRow } = await supabase.from("workspaces").select("title").eq("id", record?.workspace_id).single();
+    if (wsRow && wsRow.title === "Hiring workspace" && roleName) {
+      await supabase.from("workspaces").update({ title: roleName }).eq("id", record?.workspace_id);
+    }
     await supabase.from("audit_events").insert([{
       workspace_id: record?.workspace_id, event_type: "jd_uploaded",
       payload: { title: record?.title, chars: (extractedText || "").length },

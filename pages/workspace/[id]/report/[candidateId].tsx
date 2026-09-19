@@ -38,6 +38,19 @@ export default function Report() {
           ))}
         </section>
         <section>
+          <Eyebrow>INTERVIEW EVIDENCE</Eyebrow>
+          {state.interviews.filter((x: any) => x.candidate_doc_id === candidateId).length === 0 &&
+            <p style={{ color: "#6a6b6b", fontSize: 14 }}>No interview evidence recorded yet.</p>}
+          {state.interviews.filter((x: any) => x.candidate_doc_id === candidateId).map((x: any) => (
+            <div key={x.id} style={{ padding: "10px 0", borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: 14 }}>
+              <div className="font-mono-d" style={{ fontSize: 11, color: "#847dff" }}>{(x.req_key || "").toUpperCase()} · {new Date(x.created_at).toLocaleString("en-GB")}</div>
+              <div style={{ marginTop: 4 }}><b>Q:</b> {x.question}</div>
+              <div className="quote" style={{ marginTop: 6 }}>“{(x.analysis?.evidence || x.answer || "").slice(0, 400)}”</div>
+              {x.analysis?.remainingUncertainty && <div style={{ fontSize: 13, color: "#9f9fa0", marginTop: 4 }}>Remaining: {x.analysis.remainingUncertainty}</div>}
+            </div>
+          ))}
+        </section>
+        <section>
           <Eyebrow>AREAS NEEDING VALIDATION</Eyebrow>
           {open.length === 0 && <p style={{ color: "#6a6b6b", fontSize: 14 }}>No unresolved evidence gaps are currently identified.</p>}
           {open.map((e: any) => (
