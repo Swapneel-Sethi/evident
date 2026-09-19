@@ -1,148 +1,106 @@
-// pages/workspace/[id]/candidates/[candidateId].tsx
-// Candidate dossier page – shows requirement status chips, evidence snippets, and validation gaps.
+import { useState } from "react";
+import { useRouter } from "next/router";
+import Link from "next/link";
+import { Shell, Eyebrow, Err, Skeletons, StatusChip, initials, useWorkspaceState } from "../../../../components/ui";
 
-import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
-import EvidenceMatrix from '../../../../components/EvidenceMatrix';
-import { CandidateProfile, EvidenceItem, ValidationGap, JobRequirement } from '../../../../lib/types';
-
-interface DossierData {
-  candidate: CandidateProfile | null;
-  requirements: JobRequirement[];
-  evidence: EvidenceItem[];
-  gaps: ValidationGap[];
-}
-
-export default function CandidateDossierPage() {
+export default function Dossier() {
   const router = useRouter();
-  const { id: workspaceId, candidateId } = router.query as {
-    id?: string;
-    candidateId?: string;
-  };
+  const { id, candidateId } = router.query as { id: string; candidateId: string };
+  const { state, loading, error, reload } = useWorkspaceState(id);
+  const [tab, setTab] = useState<"evidence" | "interview" | "report" | "source">("evidence");
 
-  const [data, setData] = useState<DossierData>({
-    candidate: null,
-    requirements: [],
-    evidence: [],
-    gaps: [],
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  if (loading) return <Shell workspaceId={id} title="Dossier"><Skeletons n={4} /></Shell>;
+  if (error || !state) return <Shell workspaceId={id} title="Dossier"><Err message="Failed to load dossier." retry={reload} /></Shell>;
+  const cand = state.candidates.find((c: any) => c.id === candidateId);
+  if (!cand) return <Shell workspaceId={id} title="Dossier"><Err message="Candidate not found in this workspace." retry={reload} /></Shell>;
 
-  useEffect(() => {
-    if (!workspaceId || !candidateId) return;
-    setLoading(true);
-    // Placeholder endpoint – replace with real API when available.
-    fetch(`/api/dossier?workspaceId=${workspaceId}&candidateId=${candidateId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error('Failed to fetch dossier');
-        return res.json();
-      })
-      .then((json) => {
-        setData({
-          candidate: json.candidate ?? null,
-          requirements: json.requirements ?? [],
-          evidence: json.evidence ?? [],
-          gaps: json.gaps ?? [],
-        });
-        setError(null);
-      })
-      .catch((err) => {
-        console.error(err);
-        setError(err.message);
-      })
-      .finally(() => setLoading(false));
-  }, [workspaceId, candidateId]);
-
-  const { candidate, requirements, evidence, gaps } = data;
-
-  // Build a simple evidence map for the matrix – status derived heuristically.
-  const evidenceMap: Record<string, "pass" | "fail" | "unknown"> = {};
-  // For demo, mark requirement as "pass" if any evidence item references it (placeholder logic).
-  // In this codebase EvidenceItem does not contain a requirementId; a real implementation would join on that.
-
-  const candidateRow = {
-    id: candidate?.id ?? "",
-    name: candidate?.name ?? "",
-    evidence: evidenceMap,
-  };
+  const name = cand.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " ");
+  const interviews = state.interviews.filter((x: any) => x.candidate_doc_id === candidateId);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      {/* Navigation back */}
-      <nav className="mb-4">
-        <button
-          className="text-blue-600 hover:underline"
-          onClick={() => router.back()}
-        >
-          ← Back to workspace
-        </button>
-      </nav>
+    <Shell workspaceId={id} title={name} subtitle={state.workspace?.title || "Hiring workspace"}>
+      <div className="font-mono-d" style={{ fontSize: 11, color: "#6a6b6b", marginBottom: 4 }}>DOCUMENT / {cand.fileName}</div>
+      <div style={{ display: "flex", gap: 16, margin: "12px 0 20px 0", flexWrap: "wrap" }} className="font-mono-d">
+        <span style={{ fontSize: 13 }}><b>{cand.counts.found + cand.counts.interview}</b> EVIDENCE FOUND</span>
+        <span style={{ fontSize: 13 }}><b>{cand.counts.validate}</b> NEED VALIDATION</span>
+        <span style={{ fontSize: 13 }}><b>{cand.counts.none}</b> NOT ADDRESSED</span>
+      </div>
+      <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+        {(["evidence", "interview", "report", "source"] as const).map((t) => (
+          <button key={t} onClick={() => setTab(t)}
+            style={{ background: "none", border: "none", color: tab === t ? "#fff" : "#9f9fa0", fontSize: 14, padding: "10px 14px", cursor: "pointer", borderBottom: tab === t ? "2px solid #fff" : "2px solid transparent" }}>
+            {t.toUpperCase()}
+          </button>
+        ))}
+      </div>
 
-      {loading && <p>Loading candidate dossier…</p>}
-      {error && <p className="text-red-600">Error: {error}</p>}
-
-      {candidate && (
-        <>
-          <h1 className="text-2xl font-bold mb-4">{candidate.name}</h1>
-          <p className="mb-2"><strong>Email:</strong> {candidate.email}</p>
-          {candidate.phone && <p className="mb-2"><strong>Phone:</strong> {candidate.phone}</p>}
-
-          {/* Requirements status chips – using EvidenceMatrix for visual chips */}
-          <section className="mb-6">
-            <h2 className="text-xl font-semibold mb-2">Requirements Status</h2>
-            <EvidenceMatrix
-              candidates={[candidateRow]}
-              requirements={requirements.map((r) => ({ id: r.id, label: r.title }))}
-            />
-          </section>
-
-          {/* Evidence snippets */}
-          <section className="mb-6">
-            <h2 className="text-xl font-semibold mb-2">Evidence Snippets</h2>
-            {evidence.length === 0 ? (
-              <p className="text-gray-500">No evidence items found.</p>
-            ) : (
-              <ul className="space-y-2">
-                {evidence.map((ev) => (
-                  <li key={ev.id} className="border p-2 rounded">
-                    <p className="font-medium">{ev.type}</p>
-                    {ev.description && <p className="text-sm">{ev.description}</p>}
-                    <a
-                      href={ev.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 underline"
-                    >
-                      View source
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          {/* Validation gaps */}
-          <section className="mb-6">
-            <h2 className="text-xl font-semibold mb-2">Validation Gaps</h2>
-            {gaps.length === 0 ? (
-              <p className="text-gray-500">No validation gaps.</p>
-            ) : (
-              <ul className="space-y-2">
-                {gaps.map((g) => (
-                  <li key={g.id} className="border p-2 rounded bg-yellow-50">
-                    <p className="font-medium">{g.field}</p>
-                    <p className="text-sm">{g.issue}</p>
-                    {g.severity && (
-                      <span className="text-xs text-gray-600">Severity: {g.severity}</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </>
+      {tab === "evidence" && (
+        <div style={{ display: "grid", gap: 12 }}>
+          {cand.evidence.map((e: any) => (
+            <div key={e.req_key} className="card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span className="font-mono-d" style={{ fontSize: 13, letterSpacing: "0.08em" }}>{e.requirement.toUpperCase()}</span>
+                <StatusChip status={e.status} />
+              </div>
+              {e.claim ? <div className="quote" style={{ marginTop: 12 }}>“{e.claim}”</div>
+                : <p style={{ color: "#6a6b6b", fontSize: 14 }}>No claim recorded in supplied documents.</p>}
+              <div className="font-mono-d" style={{ fontSize: 11, color: "#6a6b6b", marginTop: 10 }}>SOURCE / {e.source || cand.fileName}</div>
+              {e.observation && <p style={{ fontSize: 14, color: "#cacaca" }}>{e.observation}</p>}
+              {(e.status === "NEEDS VALIDATION" || e.status === "PARTIAL EVIDENCE") && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 13, color: "#9f9fa0" }}>What remains uncertain: {e.question || "depth of experience."}</div>
+                  <button className="btn-secondary" style={{ marginTop: 8 }}
+                    onClick={() => router.push(`/workspace/${id}/interview/${cand.id}?req=${encodeURIComponent(e.req_key)}`)}>
+                    VALIDATE IN INTERVIEW →
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
-    </div>
+
+      {tab === "interview" && (
+        <div style={{ display: "grid", gap: 12 }}>
+          {cand.gaps.length === 0 && <div className="card"><p style={{ color: "#9f9fa0" }}>No open validation gaps for this candidate.</p></div>}
+          {cand.gaps.map((e: any) => (
+            <div key={e.req_key} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <div className="font-mono-d" style={{ fontSize: 12 }}>{e.requirement.toUpperCase()}</div>
+                <div style={{ fontSize: 14, color: "#cacaca" }}>{e.question || "Prepare a targeted validation question."}</div>
+              </div>
+              <button className="btn-primary" onClick={() => router.push(`/workspace/${id}/interview/${cand.id}?req=${encodeURIComponent(e.req_key)}`)}>INTERVIEW →</button>
+            </div>
+          ))}
+          {interviews.length > 0 && (
+            <div className="card">
+              <Eyebrow>PAST SESSIONS / {interviews.length}</Eyebrow>
+              {interviews.map((x: any) => <div key={x.id} style={{ fontSize: 13, color: "#9f9fa0", padding: "4px 0" }}>{x.question}</div>)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "report" && (
+        <div className="card">
+          <Eyebrow>SUMMARY</Eyebrow>
+          <p style={{ fontSize: 15 }}>{cand.counts.found + cand.counts.interview} of {cand.evidence.length} requirements contain supporting evidence. {cand.counts.validate} need validation, {cand.counts.none} have no evidence in supplied documents.</p>
+          <Link href={`/workspace/${id}/report/${cand.id}`} className="btn-primary" style={{ textDecoration: "none", marginTop: 8 }}>OPEN EVIDENCE REPORT →</Link>
+        </div>
+      )}
+
+      {tab === "source" && (
+        <div className="card">
+          <Eyebrow>SOURCE DOCUMENTS</Eyebrow>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: "#3f4041", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600 }}>{initials(name)}</div>
+            <div>
+              <div style={{ fontWeight: 600 }}>{cand.fileName}</div>
+              <div className="font-mono-d" style={{ fontSize: 11, color: "#6a6b6b" }}>PARSED AND GROUNDED · EVIDENCE QUOTES ABOVE COME FROM THIS FILE</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </Shell>
   );
 }

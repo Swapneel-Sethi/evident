@@ -1,265 +1,140 @@
-import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
+import { useRef, useState } from "react";
+import { useRouter } from "next/router";
+import { Shell, Eyebrow, Empty, useWorkspaceState } from "../../../components/ui";
 
-interface ActivityEvent {
-  id: string;
-  timestamp: string;
-  message: string;
-}
-
-// Simple activity feed component
-function ActivityFeed({ events }: { events: ActivityEvent[] }) {
+function Dropzone({ accept, multiple, onFiles, label, hint }: {
+  accept: string; multiple?: boolean; onFiles: (f: File[]) => void; label: string; hint: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [drag, setDrag] = useState(false);
   return (
-    <div className="border rounded p-4 bg-white">
-      <h2 className="text-lg font-semibold mb-2">Activity Feed</h2>
-      {events.length === 0 ? (
-        <p className="text-gray-500">No activity yet.</p>
-      ) : (
-        <ul className="space-y-2">
-          {events.map((ev) => (
-            <li key={ev.id} className="text-sm">
-              <span className="text-gray-500">{new Date(ev.timestamp).toLocaleString()}:</span>{' '}
-              {ev.message}
-            </li>
-          ))}
-        </ul>
-      )}
+    <div
+      className={"dropzone" + (drag ? " drag" : "")}
+      role="button" tabIndex={0} aria-label={label}
+      onClick={() => ref.current?.click()}
+      onKeyDown={(e) => { if (e.key === "Enter") ref.current?.click(); }}
+      onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+      onDragLeave={() => setDrag(false)}
+      onDrop={(e) => { e.preventDefault(); setDrag(false); onFiles(Array.from(e.dataTransfer.files || [])); }}
+    >
+      <div style={{ fontSize: 22, marginBottom: 8 }}>⇪</div>
+      <div style={{ color: "#f5f5f7", fontSize: 15 }}>{label}</div>
+      <div style={{ color: "#9f9fa0", fontSize: 13, marginTop: 4 }}>{hint}</div>
+      <input ref={ref} type="file" accept={accept} multiple={multiple} hidden
+        onChange={(e) => { onFiles(Array.from(e.target.files || [])); e.target.value = ""; }} />
     </div>
   );
 }
 
-export default function WorkspacePage() {
+export default function WorkspaceIngest() {
   const router = useRouter();
   const { id } = router.query as { id: string };
-  const [jdFile, setJdFile] = useState<File | null>(null);
-  const [resumeFiles, setResumeFiles] = useState<File[]>([]);
-  const [activity, setActivity] = useState<ActivityEvent[]>([]);
-  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
-  const [demoResult, setDemoResult] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { state, reload } = useWorkspaceState(id);
+  const [busy, setBusy] = useState("");
+  const [feed, setFeed] = useState<{ id: string; msg: string }[]>([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [steps, setSteps] = useState<string[]>([]);
+  const [done, setDone] = useState(false);
 
-  const addActivity = (msg: string) => {
-    setActivity((prev) => [
-      ...prev,
-      { id: `${Date.now()}-${Math.random()}`, timestamp: new Date().toISOString(), message: msg },
-    ]);
-  };
-
-  // Ensure workspace id is a real UUID workspace. Non-UUID ids (e.g. "demo"
-  // typed in URL) get replaced with a fresh DB-backed workspace so uploads
-  // and analysis always share the same workspace.
+  const say = (msg: string) => setFeed((f) => [...f.slice(-7), { id: `${Date.now()}-${Math.random()}`, msg }]);
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  useEffect(() => {
-    if (!id || !router.isReady) return;
-    if (UUID_RE.test(id)) {
-      fetch('/api/workspaces', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      }).catch(() => {});
-      return;
-    }
-    if (id === 'demo') return; // synthetic demo page stays local-only
-    fetch('/api/workspaces', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data?.workspace?.id) router.replace(`/workspace/${data.workspace.id}`);
-      })
-      .catch(() => {});
-  }, [id]);
 
-  const uploadJobFile = async (file: File) => {
-    const form = new FormData();
-    form.append('file', file);
-    form.append('workspaceId', id || '');
-    const res = await fetch('/api/upload-job', {
-      method: 'POST',
-      body: form,
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'Upload failed');
-    }
-    return await res.json();
-  };
-
-  const uploadResumeFile = async (file: File) => {
-    const form = new FormData();
-    form.append('file', file);
-    form.append('workspaceId', id || '');
-    const res = await fetch('/api/upload-resume', {
-      method: 'POST',
-      body: form,
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'Upload failed');
-    }
-    return await res.json();
-  };
-
-  const handleJdUpload = async () => {
-    if (!jdFile) return;
-    if (!UUID_RE.test(id || '')) {
-      addActivity('JD upload blocked: not a database workspace. Use New Workspace on the home page.');
-      return;
-    }
-    setLoading(true);
+  const upload = async (file: File, kind: "jd" | "resume") => {
+    if (!UUID_RE.test(id || "")) { say("Not a database workspace. Return home and create a new one."); return; }
+    setBusy(file.name);
     try {
-      addActivity('Uploading Job Description...');
-      const saved = await uploadJobFile(jdFile);
-      addActivity(`Job Description stored (doc ${saved?.id || 'ok'}). Safe to Analyze now.`);
-    } catch (e: any) {
-      addActivity(`JD upload error: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
+      say(`Reading ${file.name}…`);
+      const form = new FormData();
+      form.append("file", file);
+      form.append("workspaceId", id);
+      const res = await fetch(kind === "jd" ? "/api/upload-job" : "/api/upload-resume", { method: "POST", body: form });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "upload failed");
+      say(`${file.name} ready.`);
+      reload();
+    } catch (e: any) { say(`${file.name}: ${e.message}`); }
+    finally { setBusy(""); }
   };
 
-  const handleResumeUpload = async () => {
-    if (resumeFiles.length === 0) return;
-    if (!UUID_RE.test(id || '')) {
-      addActivity('Resume upload blocked: not a database workspace. Use New Workspace on the home page.');
-      return;
-    }
-    setLoading(true);
+  const analyze = async () => {
+    setAnalyzing(true); setSteps([]); setDone(false);
+    const seq = ["ROLE ANALYSIS — reading job description", "DOCUMENT EXTRACTION — processing resumes", "EVIDENCE MAPPING — linking claims to requirements", "GAP DETECTION — finding unsupported areas", "INTERVIEW INTELLIGENCE — preparing validation questions"];
     try {
-      for (const file of resumeFiles) {
-        addActivity(`Uploading resume ${file.name}...`);
-        const saved = await uploadResumeFile(file);
-        addActivity(`Resume ${file.name} stored (doc ${saved?.record?.id || 'ok'}).`);
-      }
-    } catch (e: any) {
-      addActivity(`Resume upload error: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAnalyze = async () => {
-    setLoading(true);
-    try {
-      addActivity('Analyzing candidates...');
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspaceId: id }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Analyze failed');
-      }
-      const data = await res.json();
-      setAnalysisResult(JSON.stringify(data, null, 2));
-      addActivity('Analysis completed.');
-    } catch (e: any) {
-      addActivity(`Analysis error: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
+      for (const s of seq) { setSteps((p) => [...p, s + "…"]); await new Promise((r) => setTimeout(r, 500)); }
+      const res = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId: id }) });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "analysis failed");
+      setSteps(seq.map((s) => s + " ✓"));
+      setDone(true);
+      reload();
+    } catch (e: any) { say(`Analysis: ${e.message}`); setAnalyzing(false); }
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      {/* Workspace navigation */}
-      <nav className="flex items-center mb-6">
-        <button
-          className="text-blue-600 hover:underline mr-2"
-          onClick={() => router.push('/workspace')}
-        >
-          ← Back to workspaces
-        </button>
-        <span className="font-medium">Workspace {id}</span>
-      </nav>
-
-      {/* JD upload */}
-      <section className="mb-6">
-        <h2 className="text-xl font-semibold mb-2">Job Description</h2>
-        <input
-          type="file"
-          accept=".pdf,.txt"
-          onChange={(e) => setJdFile(e.target.files?.[0] ?? null)}
-          disabled={loading}
-          className="mb-2"
-        />
-        <button
-          className="ml-2 px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
-          onClick={handleJdUpload}
-          disabled={!jdFile || loading}
-        >
-          Upload JD
-        </button>
-      </section>
-
-      {/* Resume multi‑upload */}
-      <section className="mb-6">
-        <h2 className="text-xl font-semibold mb-2">Resumes</h2>
-        <input
-          type="file"
-          accept=".pdf,.txt"
-          multiple
-          onChange={(e) => setResumeFiles(Array.from(e.target.files ?? []))}
-          disabled={loading}
-          className="mb-2"
-        />
-        <button
-          className="ml-2 px-4 py-2 bg-green-600 text-white rounded disabled:opacity-50"
-          onClick={handleResumeUpload}
-          disabled={resumeFiles.length === 0 || loading}
-        >
-          Upload Resumes
-        </button>
-      </section>
-
-      {/* Analyze Candidates */}
-      <section className="mb-6">
-        <button
-          className="px-4 py-2 bg-purple-600 text-white rounded disabled:opacity-50"
-          onClick={handleAnalyze}
-          disabled={loading}
-        >
-          Analyze Candidates
-        </button>
-        <button
-          className="ml-2 px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-50"
-          onClick={async () => {
-            setLoading(true);
-            try {
-              addActivity('Loading synthetic demo workspace (no keys needed)...');
-              const res = await fetch('/api/demo');
-              const data = await res.json();
-              setDemoResult(JSON.stringify(data, null, 2));
-              addActivity('Demo workspace loaded: 1 JD + 3 synthetic candidates.');
-            } catch (e: any) {
-              addActivity(`Demo load error: ${e.message}`);
-            } finally {
-              setLoading(false);
-            }
-          }}
-          disabled={loading}
-        >
-          Load Demo Workspace
-        </button>
-        {analysisResult && (
-          <pre className="mt-4 p-2 bg-gray-100 overflow-auto rounded">
-            {analysisResult}
-          </pre>
+    <Shell workspaceId={id} title="Build an evidence workspace."
+      subtitle="Upload the role and candidate documents. EVIDENT maps source-backed evidence to each requirement.">
+      <div style={{ display: "grid", gap: 20, maxWidth: 860 }}>
+        <div>
+          <Eyebrow>01 / ROLE CONTEXT</Eyebrow>
+          <div className="card-lg">
+            <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>Job description</div>
+            <p style={{ color: "#9f9fa0", fontSize: 14, marginTop: 0 }}>Drop a job description here — PDF or supported document — or paste the role text.</p>
+            <Dropzone accept=".pdf,.txt" label="Drop a job description here" hint="PDF or text" onFiles={(f) => f[0] && upload(f[0], "jd")} />
+          </div>
+        </div>
+        <div>
+          <Eyebrow>02 / CANDIDATES</Eyebrow>
+          <div className="card-lg">
+            <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>Candidate documents</div>
+            <p style={{ color: "#9f9fa0", fontSize: 14, marginTop: 0 }}>Multi-upload resumes. Filenames are used until extraction completes.</p>
+            <Dropzone accept=".pdf,.txt" multiple label="Drop resumes here" hint="Multiple PDFs or text files" onFiles={(f) => f.forEach((x) => upload(x, "resume"))} />
+            {state && state.candidates.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                {state.candidates.map((c: any) => (
+                  <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 10, background: "#3f4041", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600 }}>
+                      {c.fileName.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.fileName}</div>
+                    </div>
+                    <span className="chip" style={{ color: "#64d98b" }}>READY</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        {!analyzing && !done && (
+          <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <div className="font-mono-d" style={{ fontSize: 12, color: "#9f9fa0" }}>
+              {(state?.requirements.length ? 1 : 0)} ROLE DOC · {state?.candidates.length || 0} CANDIDATES
+            </div>
+            <button className="btn-primary" onClick={analyze} disabled={busy !== ""}>ANALYZE EVIDENCE →</button>
+          </div>
         )}
-        {demoResult && (
-          <pre className="mt-4 p-2 bg-yellow-50 overflow-auto rounded text-xs">
-            {demoResult}
-          </pre>
+        {analyzing && (
+          <div className="card-lg">
+            <Eyebrow>BUILDING THE EVIDENCE LAYER</Eyebrow>
+            <div className="font-serif-d" style={{ fontSize: 28, color: "#fff", marginBottom: 16 }}>
+              {done ? "The evidence is ready." : "Parsing role requirements, grounding claims…"}
+            </div>
+            {steps.map((s, i) => (
+              <div key={i} className="font-mono-d" style={{ fontSize: 12, color: "#cacaca", padding: "6px 0" }}>{s}</div>
+            ))}
+            {done && <button className="btn-primary" style={{ marginTop: 16 }} onClick={() => router.push(`/workspace/${id}/overview`)}>REVIEW WORKSPACE →</button>}
+          </div>
         )}
-      </section>
-
-      {/* Activity Feed */}
-      <section className="mb-6">
-        <ActivityFeed events={activity} />
-      </section>
-    </div>
+        {feed.length > 0 && (
+          <div className="card">
+            <Eyebrow>SESSION ACTIVITY</Eyebrow>
+            {feed.map((f) => <div key={f.id} style={{ fontSize: 13, color: "#9f9fa0", padding: "4px 0" }}>{f.msg}</div>)}
+          </div>
+        )}
+        {(!state || state.candidates.length === 0) && !analyzing && (
+          <Empty title="Evidence starts with context" body="Upload a role and candidate documents to begin." />
+        )}
+      </div>
+    </Shell>
   );
 }

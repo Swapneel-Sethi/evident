@@ -1,46 +1,57 @@
-import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
+import { useRouter } from "next/router";
+import { Shell, Eyebrow, Err, Skeletons, StatusChip, Timeline, fmtTime, useWorkspaceState } from "../../../../components/ui";
 
-type Report = {
-  candidateId: string;
-  overallScore: number;
-  summary: string;
-  recommendations?: string[];
-  createdAt: string;
-};
-
-export default function ReportPage() {
+export default function Report() {
   const router = useRouter();
-  const { id: workspaceId, candidateId } = router.query as { id?: string; candidateId?: string };
-  const [report, setReport] = useState<Report | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { id, candidateId } = router.query as { id: string; candidateId: string };
+  const { state, loading, error, reload } = useWorkspaceState(id);
 
-  useEffect(() => {
-    if (!candidateId) return;
-    fetch(`/api/evaluation/${candidateId}?workspaceId=${encodeURIComponent(workspaceId || '')}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`Report fetch failed (${res.status})`);
-        return res.json();
-      })
-      .then((json) => setReport(json.report ?? json))
-      .catch((e) => setError(e.message));
-  }, [candidateId, workspaceId]);
-
-  if (error) return <div className="p-4 text-red-600">Error: {error}</div>;
-  if (!report) return <div className="p-4">Loading report…</div>;
+  if (loading) return <Shell workspaceId={id} title="Evidence Report"><Skeletons n={4} /></Shell>;
+  if (error || !state) return <Shell workspaceId={id} title="Evidence Report"><Err message="Failed to load report." retry={reload} /></Shell>;
+  const cand = state.candidates.find((c: any) => c.id === candidateId);
+  if (!cand) return <Shell workspaceId={id} title="Evidence Report"><Err message="Candidate not found." retry={reload} /></Shell>;
+  const name = cand.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " ");
+  const supported = cand.evidence.filter((e: any) => e.status === "EVIDENCE FOUND" || e.status === "SUPPORTED BY INTERVIEW");
+  const open = cand.evidence.filter((e: any) => e.status === "NEEDS VALIDATION" || e.status === "PARTIAL EVIDENCE" || e.status === "NO EVIDENCE FOUND");
+  const related = state.activity.filter((a: any) =>
+    JSON.stringify(a.payload || "").includes(candidateId) || ["evidence_mapped", "analysis_complete"].includes(a.event_type)).slice(0, 10);
 
   return (
-    <div className="max-w-4xl mx-auto p-4">
-      <button onClick={() => router.back()} className="text-blue-600 hover:underline mb-4">← Back</button>
-      <h1 className="text-2xl font-bold mb-4">Evaluation Report for {report.candidateId}</h1>
-      <p className="mb-2"><strong>Score:</strong> {report.overallScore}</p>
-      <p className="mb-2"><strong>Summary:</strong> {report.summary}</p>
-      {report.recommendations && report.recommendations.length > 0 && (
-        <ul className="list-disc pl-5">
-          {report.recommendations.map((rec, idx) => <li key={idx}>{rec}</li>)}
-        </ul>
-      )}
-      <p className="mt-4 text-sm text-gray-500">Human review required. EVIDENT does not make hiring decisions.</p>
-    </div>
+    <Shell workspaceId={id} title="Evidence Report" subtitle={`${name} / ${state.workspace?.title || ""}`}
+      actions={<button className="btn-secondary" onClick={() => window.print()}>PRINT →</button>}>
+      <div className="card-lg" style={{ display: "grid", gap: 20 }}>
+        <section>
+          <Eyebrow>ROLE REQUIREMENTS</Eyebrow>
+          <p style={{ fontSize: 14, color: "#cacaca" }}>{supported.length} of {cand.evidence.length} requirements contain supporting evidence. This is evidence coverage, not a hiring recommendation.</p>
+        </section>
+        <section>
+          <Eyebrow>SOURCE-BACKED EVIDENCE</Eyebrow>
+          {supported.length === 0 && <p style={{ color: "#6a6b6b", fontSize: 14 }}>None recorded.</p>}
+          {supported.map((e: any) => (
+            <div key={e.req_key} style={{ padding: "10px 0", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <b style={{ fontSize: 14 }}>{e.requirement}</b><StatusChip status={e.status} />
+              </div>
+              {e.claim && <div className="quote" style={{ marginTop: 8 }}>“{e.claim}”</div>}
+              <div className="font-mono-d" style={{ fontSize: 10, color: "#6a6b6b", marginTop: 6 }}>SOURCE / {e.source}</div>
+            </div>
+          ))}
+        </section>
+        <section>
+          <Eyebrow>AREAS NEEDING VALIDATION</Eyebrow>
+          {open.length === 0 && <p style={{ color: "#6a6b6b", fontSize: 14 }}>No unresolved evidence gaps are currently identified.</p>}
+          {open.map((e: any) => (
+            <div key={e.req_key} style={{ padding: "10px 0", borderTop: "1px solid rgba(255,255,255,0.06)", fontSize: 14 }}>
+              <b>{e.requirement}</b> — {e.observation || e.question || e.status}
+            </div>
+          ))}
+        </section>
+        <section>
+          <Eyebrow>AUDIT SUMMARY</Eyebrow>
+          <Timeline events={related.map((a: any) => ({ id: a.id, time: fmtTime(a.created_at), title: (a.event_type || "").replace(/_/g, " ") }))} />
+        </section>
+        <p className="font-mono-d" style={{ fontSize: 11, color: "#6a6b6b" }}>HUMAN REVIEW REQUIRED. EVIDENT DOES NOT MAKE HIRING DECISIONS.</p>
+      </div>
+    </Shell>
   );
 }
