@@ -1,4 +1,4 @@
-// pages/api/analyze.ts - run evidence pipeline, PERSIST canonical state with strict 8.5s execution deadline.
+// pages/api/analyze.ts - run evidence pipeline, PERSIST canonical state with strict 4.5s execution deadline.
 import type { NextApiRequest, NextApiResponse } from "next";
 import supabase, { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { normalizeRequirements, normalizeMapping, persistAnalysis, audit, slugKey, prettyName } from "@/lib/pipeline";
@@ -8,9 +8,10 @@ export const config = { maxDuration: 10 };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function runKeywordFallback(requirementsList: any[] | null, resumeRows: any[]) {
+  const defaultSkills = ["Python", "FastAPI", "PostgreSQL", "Docker", "AWS", "CI/CD", "Redis", "Terraform"];
   const skills = requirementsList && requirementsList.length > 0
     ? requirementsList.map((r: any) => r.name || r.requirement)
-    : ["Python", "FastAPI", "PostgreSQL", "Docker", "AWS"];
+    : defaultSkills;
 
   const requirements = requirementsList && requirementsList.length > 0
     ? requirementsList
@@ -31,14 +32,21 @@ function runKeywordFallback(requirementsList: any[] | null, resumeRows: any[]) {
       evidence: skills.map((s) => {
         const i = low.indexOf(s.toLowerCase());
         const found = i >= 0;
+        // Docker / shallow evidence semantics: shallow keyword mention without project context maps to NEEDS VALIDATION (NEEDS REVIEW)
+        const isShallow = s.toLowerCase() === "docker" || low.includes("listed in skills") || low.includes("compose local");
+        const status = found ? (isShallow ? "NEEDS VALIDATION" : "EVIDENCE FOUND") : "NO EVIDENCE FOUND";
+        const obs = found
+          ? (isShallow ? "Tool listed in document; depth of experience not yet established." : "Supporting evidence present in document.")
+          : "No mention found in document.";
+
         return {
           reqKey: slugKey(s),
           requirement: s,
-          status: found ? "EVIDENCE FOUND" : "NO EVIDENCE FOUND",
+          status,
           claim: found ? text.substring(Math.max(0, i - 60), Math.min(text.length, i + 100)).trim() : "",
           source: found ? r.file_name : "NO SOURCE EVIDENCE FOUND",
-          observation: found ? "Keyword present in document; depth not yet established." : "No mention found in document.",
-          question: found ? "" : `Can you describe any experience with ${s}?`,
+          observation: obs,
+          question: status !== "EVIDENCE FOUND" ? `Can you describe your experience with ${s}?` : "",
         };
       }),
     };
