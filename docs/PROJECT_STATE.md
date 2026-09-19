@@ -23,7 +23,7 @@ EVIDENT
 
 ## Deployment Status
 - DEPLOYED: https://evident-olive.vercel.app (prod, verified: /api/demo 3 candidates + workspace/activity Supabase roundtrip).
-- Vercel envs set: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY. GEMINI_API_KEY NOT set (invalid key) - app runs keyword-fallback mode.
+- Vercel envs set: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, GEMINI_API_KEY. AI LIVE on prod (gemini-2.5-flash, verified interview analysis).
 
 ## Latest Working Commit
 - N/A (initial commit).
