@@ -22,8 +22,8 @@ EVIDENT
 - Deploy needs: VERCEL_TOKEN, Supabase URL + anon key, GEMINI_API_KEY (valid AIza-format key).
 
 ## Deployment Status
-- Not deployed. Schema ready at supabase/schema.sql. .env.example present.
-- Supabase LIVE: project active, schema + RLS + grants applied, buckets created, .env.local written. Roundtrip verified (workspace → activity post → activity get).
+- DEPLOYED: https://evident-olive.vercel.app (prod, verified: /api/demo 3 candidates + workspace/activity Supabase roundtrip).
+- Vercel envs set: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY. GEMINI_API_KEY NOT set (invalid key) - app runs keyword-fallback mode.
 
 ## Latest Working Commit
 - N/A (initial commit).
