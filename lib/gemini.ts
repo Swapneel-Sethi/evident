@@ -39,21 +39,28 @@ async function callOpenAICompatible(
   baseUrl: string,
   apiKey: string,
   model: string,
-  prompt: string
+  prompt: string,
+  useJsonMode: boolean
 ): Promise<string> {
+  const reqBody: any = {
+    model,
+    temperature: provider === "groq" ? 1 : 0.2,
+    messages: [
+      { role: "system", content: "Return ONLY valid JSON. No markdown fences. No explanation." },
+      { role: "user", content: prompt },
+    ],
+  };
+  if (useJsonMode) {
+    reqBody.response_format = { type: "json_object" };
+    reqBody.max_tokens = 4000;
+  } else {
+    // Groq rejects response_format on current models; system prompt enforces JSON.
+    reqBody.max_completion_tokens = 4000;
+  }
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      max_tokens: 4000,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: "Return ONLY valid JSON. No markdown fences. No explanation." },
-        { role: "user", content: prompt },
-      ],
-    }),
+    body: JSON.stringify(reqBody),
   });
   if (!res.ok) {
     const errText = await res.text();
@@ -80,14 +87,14 @@ export async function fetchGemini(prompt: string): Promise<string> {
       if (p === "groq") {
         const k = process.env.GROQ_API_KEY;
         if (!k) continue;
-        const out = await callOpenAICompatible("groq", "https://api.groq.com/openai/v1", k, process.env.GROQ_MODEL || "llama-3.3-70b-versatile", prompt);
+        const out = await callOpenAICompatible("groq", "https://api.groq.com/openai/v1", k, process.env.GROQ_MODEL || "openai/gpt-oss-120b", prompt, false);
         console.log(`AI provider used: groq`);
         return out;
       }
       if (p === "mistral") {
         const k = process.env.MISTRAL_API_KEY;
         if (!k) continue;
-        const out = await callOpenAICompatible("mistral", "https://api.mistral.ai/v1", k, process.env.MISTRAL_MODEL || "mistral-small-latest", prompt);
+        const out = await callOpenAICompatible("mistral", "https://api.mistral.ai/v1", k, process.env.MISTRAL_MODEL || "mistral-small-latest", prompt, true);
         console.log(`AI provider used: mistral`);
         return out;
       }
