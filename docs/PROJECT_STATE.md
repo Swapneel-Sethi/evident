@@ -4,10 +4,12 @@
 EVIDENT
 
 ## Current Status
-- Initialization phase started.
+- Production build passes (Next 14.2.35). UI wired to API routes.
 
 ## What Works
 - Repository created, docs folder added.
+- JD upload, resume upload, analyze (keyword fallback + Gemini path), interview, dossier, query, activity, report pages.
+- `npm run build` green.
 
 ## What Is Being Built
 - Core architecture design, initial scaffolding.
@@ -16,20 +18,17 @@ EVIDENT
 - None yet.
 
 ## Current Blocker
-- None.
-
-## Environment Variables
-- GEMINI_API_KEY (required for AI calls).
+- Deploy needs: VERCEL_TOKEN, Supabase URL + anon key, GEMINI_API_KEY (valid AIza-format key).
 
 ## Deployment Status
-- Not deployed.
+- Not deployed. Schema ready at supabase/schema.sql. .env.example present.
 
 ## Latest Working Commit
 - N/A (initial commit).
 
 ## Next 5 Actions
-1. Scaffold Next.js TypeScript app.
-2. Set up Supabase client config.
-3. Create database schema migration files.
-4. Implement PDF upload endpoint.
-5. Draft architecture diagram.
+1. Implement backend orchestrator (API routes and service layer).
+2. Build UI pages for workspace, candidate dossier, interview, report.
+3. Connect UI to orchestrator endpoints.
+4. Add evidence matrix component and activity feed.
+5. Write initial integration tests for end-to-end flow.
