@@ -46,8 +46,12 @@ export default async function handler(
       const analysis = await analyzeInterviewResponse(response, interviewPlan);
       const followUp = await generateFollowUp(analysis);
       res.status(200).json({ analysis, followUp });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Interview processing error:", error);
+      if (error?.message?.includes("GEMINI_RATE_LIMITED")) {
+        res.status(429).json({ error: "AI is rate-limited right now (free tier: 5 requests/min). Wait ~40 seconds and submit again." });
+        return;
+      }
       res.status(500).json({ error: "Failed to process interview answer" });
     }
     return;

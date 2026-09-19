@@ -48,7 +48,11 @@ async function callGeminiAndValidate<T>(prompt: string, schema: any): Promise<T>
 
 /** Record an audit event for later tracing. */
 async function recordAudit(event: AuditEvent): Promise<void> {
-  const { data, error } = await supabase.from('audit_events').insert([event]);
+  const { data, error } = await supabase.from('audit_events').insert([{
+    workspace_id: (event as any).workspaceId ?? null,
+    event_type: (event as any).event_type ?? (event as any).type ?? 'agent_event',
+    payload: (event as any).details ?? (event as any).payload ?? event,
+  }]);
   if (error) {
     console.error('Failed to record audit event', error);
   }

@@ -53,7 +53,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } else {
       extractedText = fileBuffer.toString("utf-8");
     }
-    const workspaceId = (fields.workspaceId || fields.workspace_id) as string;
+    const norm = (v: any) => (Array.isArray(v) ? v[0] : v);
+    const workspaceId = norm(fields.workspaceId ?? fields.workspace_id) as string;
     if (!workspaceId) {
       await fs.unlink(tmpPath).catch(() => {});
       return res.status(400).json({ error: "Missing workspaceId field" });

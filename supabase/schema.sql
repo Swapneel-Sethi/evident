@@ -51,3 +51,8 @@ grant select, insert, update, delete on workspaces to anon;
 grant select, insert, update, delete on job_documents to anon;
 grant select, insert, update, delete on candidate_documents to anon;
 grant select, insert, update, delete on audit_events to anon;
+
+-- Storage object policies for app buckets (anon via server-side API routes).
+create policy anon_rw on storage.objects for all to anon
+  using (bucket_id in ('job_descriptions','candidate_resumes'))
+  with check (bucket_id in ('job_descriptions','candidate_resumes'));

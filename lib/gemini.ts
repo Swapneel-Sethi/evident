@@ -30,6 +30,9 @@ export async function fetchGemini(prompt: string): Promise<string> {
   });
   if (!res.ok) {
     const errText = await res.text();
+    if (res.status === 429) {
+      throw new Error('GEMINI_RATE_LIMITED: free-tier quota hit. Wait ~40s and retry. Details: ' + errText.substring(0, 200));
+    }
     throw new Error(`Gemini API request failed: ${res.status} ${res.statusText} - ${errText}`);
   }
   const data = await res.json();

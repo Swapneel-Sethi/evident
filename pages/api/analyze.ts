@@ -47,6 +47,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({ mode: "gemini", requirements, results });
   } catch (e: any) {
     console.error("Analyze error:", e);
+    if (e.message?.includes("GEMINI_RATE_LIMITED")) {
+      return res.status(429).json({ error: "AI is rate-limited right now (free tier: 5 requests/min). Wait ~40 seconds and retry." });
+    }
     return res.status(500).json({ error: e.message?.includes("GEMINI") ? "AI request failed. Check GEMINI_API_KEY and try again." : "Analysis failed. Try again." });
   }
 }

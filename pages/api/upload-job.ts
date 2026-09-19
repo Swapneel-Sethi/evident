@@ -94,13 +94,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       extractedText = fileBuffer.toString("utf-8");
     }
 
-    // Determine required fields.
-    const workspaceId = fields.workspaceId || fields.workspace_id;
+    // Determine required fields (formidable returns arrays).
+    const norm = (v: any) => (Array.isArray(v) ? v[0] : v);
+    const workspaceId = norm(fields.workspaceId ?? fields.workspace_id);
     if (!workspaceId) {
       await fs.unlink(tmpPath).catch(() => {});
       return res.status(400).json({ error: "Missing workspaceId field" });
     }
-    const title = fields.title || path.parse(originalName).name;
+    const title = norm(fields.title) || path.parse(originalName).name;
 
     // Upload the file to Supabase storage.
     const storagePath = `${Date.now()}_${originalName}`;
