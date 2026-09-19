@@ -1,10 +1,11 @@
 // pages/api/state.ts - ONE canonical workspace state for every screen.
 import type { NextApiRequest, NextApiResponse } from "next";
 import supabase, { isSupabaseConfigured } from "@/lib/supabaseClient";
+import { resolveCandidateRequirementState, slugKey } from "@/lib/pipeline";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
-    res.setHeader("Allow", ["GET"]);
+    res.setHeader("Allow", ["POST", "GET"]);
     return res.status(405).json({ error: "Method Not Allowed" });
   }
   const { workspaceId } = req.query as { workspaceId?: string };
@@ -29,24 +30,51 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return stripped.replace(/\b\w/g, (c) => c.toUpperCase()) || base;
   };
 
-  const byDoc = new Map<string, any[]>();
+  const byDocEv = new Map<string, any[]>();
   for (const e of ev || []) {
-    if (!byDoc.has(e.candidate_doc_id)) byDoc.set(e.candidate_doc_id, []);
-    byDoc.get(e.candidate_doc_id)!.push(e);
+    if (!byDocEv.has(e.candidate_doc_id)) byDocEv.set(e.candidate_doc_id, []);
+    byDocEv.get(e.candidate_doc_id)!.push(e);
   }
+
+  const byDocInt = new Map<string, any[]>();
+  for (const i of interviews || []) {
+    if (!byDocInt.has(i.candidate_doc_id)) byDocInt.set(i.candidate_doc_id, []);
+    byDocInt.get(i.candidate_doc_id)!.push(i);
+  }
+
+  const roleRequirements = (reqs || []).map((r: any) => ({
+    ...r,
+    req_key: r.req_key || r.key || slugKey(r.name),
+  }));
+
   const candidates = (docs || []).map((d: any) => {
-    const list = byDoc.get(d.id) || [];
+    const docEvList = byDocEv.get(d.id) || [];
+    const docIntList = byDocInt.get(d.id) || [];
+
+    // Authoritative LEFT JOIN: Start with COMPLETE role requirement list
+    const evidence = roleRequirements.map((r: any) => {
+      const rKey = r.req_key;
+      const eRow = docEvList.find((e: any) => e.req_key === rKey || (e.requirement && e.requirement.toLowerCase() === r.name.toLowerCase()));
+      const iRow = docIntList.find((i: any) => i.req_key === rKey || (i.req_key && rKey && i.req_key.toLowerCase() === rKey.toLowerCase()));
+      return resolveCandidateRequirementState(r, eRow, iRow);
+    });
+
     const isFound = (s: string) => s === "EVIDENCE FOUND" || s === "SUPPORTED BY INTERVIEW";
     const isReview = (s: string) => s === "PARTIAL EVIDENCE" || s === "NEEDS VALIDATION" || s === "CONFLICTING INFORMATION";
     const isNone = (s: string) => s === "NO EVIDENCE FOUND";
-    const found = list.filter((e) => isFound(e.status)).length;
-    const review = list.filter((e) => isReview(e.status)).length;
-    const none = list.filter((e) => isNone(e.status)).length;
-    const count = (s: string) => list.filter((e) => e.status === s).length;
+
+    const found = evidence.filter((e) => isFound(e.status)).length;
+    const review = evidence.filter((e) => isReview(e.status)).length;
+    const none = evidence.filter((e) => isNone(e.status)).length;
+    const count = (s: string) => evidence.filter((e) => e.status === s).length;
+
     return {
-      id: d.id, fileName: d.file_name, displayName: dispName(d), createdAt: d.created_at,
-      evidence: list,
-      gaps: list.filter((e) => e.status === "NEEDS VALIDATION" || e.status === "NO EVIDENCE FOUND"),
+      id: d.id,
+      fileName: d.file_name,
+      displayName: dispName(d),
+      createdAt: d.created_at,
+      evidence,
+      gaps: evidence.filter((e) => isReview(e.status) || isNone(e.status)),
       groups: { found, review, none },
       counts: {
         found: count("EVIDENCE FOUND"),
@@ -57,23 +85,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     };
   });
-  const all = ev || [];
-  const isFoundAll = (s: string) => s === "EVIDENCE FOUND" || s === "SUPPORTED BY INTERVIEW";
-  const isReviewAll = (s: string) => s === "PARTIAL EVIDENCE" || s === "NEEDS VALIDATION" || s === "CONFLICTING INFORMATION";
+
+  const totalReqs = roleRequirements.length;
+  const totalFound = candidates.reduce((sum, c) => sum + c.groups.found, 0);
+  const totalGaps = candidates.reduce((sum, c) => sum + c.groups.review + c.groups.none, 0);
+
   const stats = {
     candidates: candidates.length,
-    requirements: (reqs || []).length,
-    signals: all.filter((e) => isFoundAll(e.status)).length,
-    gaps: all.filter((e) => isReviewAll(e.status) || e.status === "NO EVIDENCE FOUND").length,
+    requirements: totalReqs,
+    signals: totalFound,
+    gaps: totalGaps,
   };
+
   return res.status(200).json({
     workspace: ws || null,
-    requirements: reqs || [],
+    requirements: roleRequirements,
     jobDocs: jobDocs || [],
     candidates,
     interviews: interviews || [],
     activity: (events || []).map((a: any) => {
-      // Human-readable audit labels: resolve ids to names, never raw keys.
       const p = a.payload || {};
       let label = "";
       if (p.reqKey || p.req_key) {
@@ -88,6 +118,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return { ...a, label };
     }),
     stats,
-    analyzed: (reqs || []).length > 0,
+    analyzed: totalReqs > 0,
   });
 }

@@ -6,6 +6,16 @@ export function slugKey(name: string): string {
   return s || `req-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+export function normStatus(rawStatus: string): string {
+  const s = String(rawStatus || "").toUpperCase();
+  if (s.includes("EVIDENCE FOUND") && !s.includes("NO ")) return "EVIDENCE FOUND";
+  if (s.includes("PARTIAL")) return "PARTIAL EVIDENCE";
+  if (s.includes("VALIDATION") || s.includes("NEEDS")) return "NEEDS VALIDATION";
+  if (s.includes("SUPPORTED")) return "SUPPORTED BY INTERVIEW";
+  if (s.includes("CONFLICTING")) return "CONFLICTING INFORMATION";
+  return "NO EVIDENCE FOUND";
+}
+
 export function normalizeRequirements(raw: any, jobText: string) {
   const list = Array.isArray(raw) ? raw : ((raw as any)?.requirements || []);
   const arr = list.map((r: any) => {
@@ -21,7 +31,7 @@ export function normalizeRequirements(raw: any, jobText: string) {
 
   if (arr.length > 0) return arr;
 
-  const fallbackSkills = ["Python", "FastAPI", "PostgreSQL", "Docker", "AWS"];
+  const fallbackSkills = ["Python", "FastAPI", "PostgreSQL", "Docker", "AWS", "CI/CD", "Redis", "Terraform"];
   const low = jobText.toLowerCase();
   const matched = fallbackSkills.filter((s) => low.includes(s.toLowerCase()));
   const finalSkills = matched.length > 0 ? matched : fallbackSkills;
@@ -54,11 +64,31 @@ export function normalizeMapping(mapping: any[], requirements: any[]) {
       };
     }
     const rawStatus = String(found.status || "").toUpperCase();
+    const obs = String(found.observation || "").toLowerCase();
     let status = "NO EVIDENCE FOUND";
-    if (rawStatus.includes("EVIDENCE FOUND") && !rawStatus.includes("NO ")) status = "EVIDENCE FOUND";
-    else if (rawStatus.includes("PARTIAL")) status = "PARTIAL EVIDENCE";
-    else if (rawStatus.includes("VALIDATION") || rawStatus.includes("NEEDS")) status = "NEEDS VALIDATION";
-    else if (rawStatus.includes("SUPPORTED")) status = "SUPPORTED BY INTERVIEW";
+    if (rawStatus.includes("EVIDENCE FOUND") && !rawStatus.includes("NO ")) {
+      // Fix Docker & shallow evidence semantics: status and observation MUST agree
+      if (
+        obs.includes("depth not yet established") ||
+        obs.includes("query evidence only") ||
+        obs.includes("keyword present") ||
+        obs.includes("shallow") ||
+        obs.includes("no work/project context") ||
+        obs.includes("tool listed but no project evidence")
+      ) {
+        status = "NEEDS VALIDATION";
+      } else {
+        status = "EVIDENCE FOUND";
+      }
+    } else if (rawStatus.includes("PARTIAL")) {
+      status = "PARTIAL EVIDENCE";
+    } else if (rawStatus.includes("VALIDATION") || rawStatus.includes("NEEDS")) {
+      status = "NEEDS VALIDATION";
+    } else if (rawStatus.includes("SUPPORTED")) {
+      status = "SUPPORTED BY INTERVIEW";
+    } else if (rawStatus.includes("CONFLICTING")) {
+      status = "CONFLICTING INFORMATION";
+    }
 
     return {
       reqKey: req.key,
@@ -67,9 +97,83 @@ export function normalizeMapping(mapping: any[], requirements: any[]) {
       claim: String(found.claim || "").trim(),
       source: String(found.source || found.source_doc || "").trim() || (status === "NO EVIDENCE FOUND" ? "NO SOURCE EVIDENCE FOUND" : "Resume"),
       observation: String(found.observation || "").trim() || (status === "EVIDENCE FOUND" ? "Document establishes capability." : "Needs validation."),
-      question: String(found.question || "").trim() || (status !== "EVIDENCE FOUND" ? `Can you describe your experience with ${req.name}?` : ""),
+      question: String(found.question || "").trim() || (status !== "EVIDENCE FOUND" && status !== "SUPPORTED BY INTERVIEW" ? `Can you describe your experience with ${req.name}?` : ""),
     };
   });
+}
+
+/**
+ * CANONICAL RESOLVER: Left-joins evidence and interview state onto a role requirement.
+ * Guarantees every candidate state for every requirement is normalized and authoritative.
+ */
+export function resolveCandidateRequirementState(
+  requirement: { key?: string; req_key?: string; name: string; category?: string; importance?: string; description?: string },
+  candidateEvidenceRow?: any,
+  interviewResponseRow?: any
+) {
+  const reqKey = requirement.req_key || requirement.key || slugKey(requirement.name);
+
+  // If interview response exists and satisfied is true or status is SUPPORTED BY INTERVIEW
+  if (interviewResponseRow && (interviewResponseRow.satisfied === true || String(interviewResponseRow.status || "").includes("SUPPORTED"))) {
+    return {
+      req_key: reqKey,
+      reqKey: reqKey,
+      requirement: requirement.name,
+      status: "SUPPORTED BY INTERVIEW",
+      claim: candidateEvidenceRow?.claim || interviewResponseRow.answer || "",
+      source: "Interview Validation",
+      source_doc: candidateEvidenceRow?.source_doc || candidateEvidenceRow?.source || "Interview",
+      source_section: "Interview Validation",
+      observation: interviewResponseRow.notes || interviewResponseRow.evidence || "Validated via interview question.",
+      question: candidateEvidenceRow?.question || "",
+    };
+  }
+
+  if (candidateEvidenceRow) {
+    let status = normStatus(candidateEvidenceRow.status);
+    const obs = String(candidateEvidenceRow.observation || "").toLowerCase();
+
+    // Fix Docker / shallow evidence semantics: status and observation MUST agree
+    if (status === "EVIDENCE FOUND") {
+      if (
+        obs.includes("depth not yet established") ||
+        obs.includes("query evidence only") ||
+        obs.includes("keyword present") ||
+        obs.includes("shallow") ||
+        obs.includes("no work/project context") ||
+        obs.includes("tool listed but no project evidence")
+      ) {
+        status = "NEEDS VALIDATION";
+      }
+    }
+
+    return {
+      req_key: reqKey,
+      reqKey: reqKey,
+      requirement: requirement.name,
+      status,
+      claim: String(candidateEvidenceRow.claim || "").trim(),
+      source: candidateEvidenceRow.source || (status === "NO EVIDENCE FOUND" ? "NO SOURCE EVIDENCE FOUND" : candidateEvidenceRow.source_doc || "Resume"),
+      source_doc: candidateEvidenceRow.source_doc || candidateEvidenceRow.source || (status === "NO EVIDENCE FOUND" ? "NO SOURCE EVIDENCE FOUND" : "Resume"),
+      source_section: candidateEvidenceRow.source_section || "",
+      observation: String(candidateEvidenceRow.observation || "").trim() || (status === "EVIDENCE FOUND" ? "Document establishes capability." : "Needs validation."),
+      question: String(candidateEvidenceRow.question || "").trim() || (status !== "EVIDENCE FOUND" && status !== "SUPPORTED BY INTERVIEW" ? `Can you describe your experience with ${requirement.name}?` : ""),
+    };
+  }
+
+  // Default LEFT JOIN row if candidate has no evidence record for this requirement
+  return {
+    req_key: reqKey,
+    reqKey: reqKey,
+    requirement: requirement.name,
+    status: "NO EVIDENCE FOUND",
+    claim: "",
+    source: "NO SOURCE EVIDENCE FOUND",
+    source_doc: "NO SOURCE EVIDENCE FOUND",
+    source_section: "",
+    observation: "No mention found in document.",
+    question: `Can you describe your experience with ${requirement.name}?`,
+  };
 }
 
 /**
@@ -132,15 +236,6 @@ export async function persistAnalysis(
 
 export async function audit(workspaceId: string, type: string, payload: any) {
   await supabase.from("audit_events").insert([{ workspace_id: workspaceId, event_type: type, payload }]);
-}
-
-export function normStatus(rawStatus: string): string {
-  const s = String(rawStatus || "").toUpperCase();
-  if (s.includes("EVIDENCE FOUND") && !s.includes("NO ")) return "EVIDENCE FOUND";
-  if (s.includes("PARTIAL")) return "PARTIAL EVIDENCE";
-  if (s.includes("VALIDATION") || s.includes("NEEDS")) return "NEEDS VALIDATION";
-  if (s.includes("SUPPORTED")) return "SUPPORTED BY INTERVIEW";
-  return "NO EVIDENCE FOUND";
 }
 
 export function dequote(s: string): string {
