@@ -54,23 +54,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const rawReqs = await extractJobRequirements(jdText);
     const requirements = normalizeRequirements(rawReqs, jdText);
     await audit(workspaceId, "requirements_extracted", { count: requirements.length });
-    const perCandidate = [];
-    for (const r of resumeRows) {
-      // ONE Gemini call per candidate (quota-friendly: 1 + N calls total).
-      const { profile, mapping } = await analyzeCandidateOnce(requirements, r.content?.text || "");
-      await supabase.from("candidate_documents").update({
-        display_name: prettyName(r.file_name, (profile as any)?.name),
-      }).eq("id", r.id);
-      perCandidate.push({ docId: r.id, fileName: r.file_name, evidence: normalizeMapping(mapping, requirements) });
-    }
+
+    // Run candidate analysis in parallel for fast execution under Vercel function timeout limit.
+    const perCandidate = await Promise.all(
+      resumeRows.map(async (r) => {
+        const { profile, mapping } = await analyzeCandidateOnce(requirements, r.content?.text || "");
+        await supabase.from("candidate_documents").update({
+          display_name: prettyName(r.file_name, (profile as any)?.name),
+        }).eq("id", r.id);
+        return { docId: r.id, fileName: r.file_name, evidence: normalizeMapping(mapping, requirements) };
+      })
+    );
+
     const { gapCount } = await persistAnalysis(workspaceId, requirements, perCandidate, "gemini");
     await audit(workspaceId, "analysis_complete", { gaps: gapCount });
     return res.status(200).json({ mode: "gemini", persisted: true, requirements: requirements.length, candidates: perCandidate.length, gaps: gapCount });
   } catch (e: any) {
     console.error("Analyze error:", e);
     if (e.message?.includes("GEMINI_RATE_LIMITED")) {
-      return res.status(429).json({ error: "AI is rate-limited right now (free tier: 5 requests/min). Wait ~40 seconds and retry." });
+      return res.status(429).json({ error: "AI is rate-limited right now. Wait ~20 seconds and retry." });
     }
-    return res.status(500).json({ error: "Analysis failed. Your files are safe - try again in a moment." });
+    return res.status(500).json({ error: e.message || "Analysis failed. Try again in a moment." });
   }
 }

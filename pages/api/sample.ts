@@ -39,23 +39,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       await persistAnalysis(wid, requirements, perCandidate, "sample-synthetic");
       return res.status(200).json({ workspaceId: wid });
     }
+
     const { extractJobRequirements, analyzeCandidateOnce } = await import("@/lib/orchestrator");
     const requirements = normalizeRequirements(await extractJobRequirements(DEMO_JD), DEMO_JD);
-    const perCandidate = [];
-    for (const d of docs) {
-      const { profile, mapping } = await analyzeCandidateOnce(requirements, d.text);
-      await supabase.from("candidate_documents").update({
-        display_name: prettyName(d.fileName, (profile as any)?.name),
-      }).eq("id", d.id);
-      perCandidate.push({ docId: d.id, fileName: d.fileName, evidence: normalizeMapping(mapping, requirements) });
-    }
+    
+    // Run parallel candidate analyses for fast execution within Vercel timeout limits
+    const perCandidate = await Promise.all(
+      docs.map(async (d) => {
+        const { profile, mapping } = await analyzeCandidateOnce(requirements, d.text);
+        await supabase.from("candidate_documents").update({
+          display_name: prettyName(d.fileName, (profile as any)?.name),
+        }).eq("id", d.id);
+        return { docId: d.id, fileName: d.fileName, evidence: normalizeMapping(mapping, requirements) };
+      })
+    );
+
     await persistAnalysis(wid, requirements, perCandidate, "sample-ai");
     return res.status(200).json({ workspaceId: wid });
   } catch (e: any) {
     console.error("Sample error:", e);
     if (e.message?.includes("GEMINI_RATE_LIMITED")) {
-      return res.status(429).json({ error: "AI is rate-limited right now. Wait ~40 seconds and retry." });
+      return res.status(429).json({ error: "AI is rate-limited right now. Wait ~20 seconds and retry." });
     }
-    return res.status(500).json({ error: "Sample workspace failed. Try again in a moment." });
+    return res.status(500).json({ error: e.message || "Sample workspace failed. Try again in a moment." });
   }
 }
