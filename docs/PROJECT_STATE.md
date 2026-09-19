@@ -4,7 +4,10 @@
 EVIDENT — evidence-grounded recruitment intelligence.
 
 ## Current Status
-- FINAL PASS: backend canonical persistence done; premium obsidian UI rebuilt on all screens; docs complete; deploying + verifying.
+- FINAL PASS COMPLETE: canonical persistence + premium UI + docs, deployed and E2E-verified on prod.
+
+## What Works
+- Sample-via-real-AI (7 reqs, 3 cands persisted), interview loop with persisted status transitions, NL queries, audit trail, reports, settings, 3-provider failover.
 
 ## What Works
 - Uploads (JD + multi-resume, unpdf extraction), persisted gemini/keyword analysis, canonical `/api/state`, matrix + evidence drawer, dossier tabs, interview loop with follow-ups + status updates, Ask EVIDENT, audit trail, reports, settings, sample-via-real-pipeline, 3-provider failover, Vercel prod.
