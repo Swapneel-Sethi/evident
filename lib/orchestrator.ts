@@ -76,6 +76,13 @@ export async function extractCandidateProfile(candidateText: string): Promise<Ca
   return profile;
 }
 
+/** Analyze one candidate against requirements in a SINGLE Gemini call (quota-friendly). */
+export async function analyzeCandidateOnce(jobRequirements: JobRequirements, candidateText: string): Promise<{ profile: any; mapping: any }> {
+  const prompt = `You are EVIDENT, an evidence-grounded recruitment assistant. Given job requirements and a resume, return ONLY JSON with shape: {"profile": {"skills": string[], "experience": string[], "projects": string[], "qualifications": string[]}, "mapping": [{"requirementId": string, "requirement": string, "status": "EVIDENCE FOUND"|"PARTIAL EVIDENCE"|"NEEDS VALIDATION"|"NO EVIDENCE FOUND", "claim": string, "source": string, "observation": string}]}. Rules: never invent facts; use "NO EVIDENCE FOUND" with empty claim when absent; ignore protected traits.\n\nRequirements: ${JSON.stringify(jobRequirements)}\n\nResume:\n${candidateText}`;
+  const out = await callGeminiAndValidate<{ profile: any; mapping: any }>(prompt, ExtractCandidateProfileResponseSchema);
+  await recordAudit({ event_type: 'analyze_candidate_once', details: { mappingCount: (out as any)?.mapping?.length ?? 0 }, created_at: new Date().toISOString() } as any);
+  return out;
+}
 /** Map candidate evidence to job requirements. */
 export async function mapCandidateEvidence(evidence: any, jobRequirements: JobRequirements): Promise<EvidenceMap> {
   const prompt = `Given candidate evidence and job requirements, produce a JSON mapping where each requirement id maps to an evidence status (EVIDENCE_FOUND, PARTIAL_EVIDENCE, NEEDS_VALIDATION, NO_EVIDENCE_FOUND).\n\nRequirements: ${JSON.stringify(jobRequirements)}\n\nEvidence: ${JSON.stringify(evidence)}`;
@@ -150,6 +157,7 @@ export async function recordAuditEvent(event: AuditEvent): Promise<void> {
 export const orchestrator = {
   extractJobRequirements,
   extractCandidateProfile,
+  analyzeCandidateOnce,
   mapCandidateEvidence,
   identifyValidationGaps,
   generateInterviewPlan,

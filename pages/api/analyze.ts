@@ -2,6 +2,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import supabase, { isSupabaseConfigured } from "@/lib/supabaseClient";
 
+export const config = { maxDuration: 60 };
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     res.setHeader("Allow", ["POST"]);
@@ -40,12 +42,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ mode: "keyword-fallback", message: "GEMINI_API_KEY missing - used deterministic keyword mapping.", results });
     }
 
-    const { extractJobRequirements, extractCandidateProfile, mapCandidateEvidence } = await import("@/lib/orchestrator");
+    const { extractJobRequirements, analyzeCandidateOnce } = await import("@/lib/orchestrator");
     const requirements = await extractJobRequirements(jdText);
     const results = [];
     for (const r of resumes) {
-      const profile = await extractCandidateProfile(r.content?.text || "");
-      const mapping = await mapCandidateEvidence(profile, requirements);
+      // ONE Gemini call per candidate (quota-friendly: 1 + N calls total).
+      const { profile, mapping } = await analyzeCandidateOnce(requirements, r.content?.text || "");
       results.push({ candidateId: r.id, profile, mapping });
     }
     await supabase.from("audit_events").insert([{ workspace_id: workspaceId, event_type: "analyze_candidates", payload: { mode: "gemini", count: results.length } }]);
