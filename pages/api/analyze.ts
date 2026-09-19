@@ -14,10 +14,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   try {
     const { data: jobs } = await supabase.from("job_documents").select("id").eq("workspace_id", workspaceId).limit(1);
-    const { data: resumes } = await supabase.from("candidate_documents").select("id").eq("workspace_id", workspaceId).limit(10);
+    const { data: resumeIds } = await supabase.from("candidate_documents").select("id").eq("workspace_id", workspaceId).limit(10);
     const jdRow = jobs?.[0];
     if (!jdRow) return res.status(400).json({ error: `No job description found in this workspace (${String(workspaceId).slice(0, 8)}…). Upload a JD in THIS workspace first, then Analyze.` });
-    if (!resumes || resumes.length === 0) return res.status(400).json({ error: "No resumes found in this workspace. Upload resumes first." });
+    if (!resumeIds || resumeIds.length === 0) return res.status(400).json({ error: "No resumes found in this workspace. Upload resumes first." });
     const { data: jdFull } = await supabase.from("job_documents").select("content").eq("id", jdRow.id).single();
     const jdText: string = jdFull?.content?.text || "";
     if (!jdText.trim()) return res.status(400).json({ error: "Job description has no readable text. Try a text-based PDF." });
