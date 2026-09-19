@@ -1,4 +1,4 @@
-// pages/api/analyze.ts - run evidence pipeline, PERSIST canonical state.
+// pages/api/analyze.ts - run evidence pipeline, PERSIST canonical state with strict 8.5s execution deadline.
 import type { NextApiRequest, NextApiResponse } from "next";
 import supabase, { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { normalizeRequirements, normalizeMapping, persistAnalysis, audit, slugKey, prettyName } from "@/lib/pipeline";
@@ -6,10 +6,6 @@ import { normalizeRequirements, normalizeMapping, persistAnalysis, audit, slugKe
 export const config = { maxDuration: 10 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 function runKeywordFallback(requirementsList: any[] | null, resumeRows: any[]) {
   const skills = requirementsList && requirementsList.length > 0
@@ -79,28 +75,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ mode: "keyword-fallback", persisted: true, candidates: perCandidate.length });
     }
 
-    try {
+    // Wrap AI operations in a strict 8-second deadline to ensure we NEVER breach Vercel's 10s serverless timeout.
+    const aiPromise = (async () => {
       const { extractJobRequirements, analyzeCandidateOnce } = await import("@/lib/orchestrator");
       const rawReqs = await extractJobRequirements(jdText);
       const requirements = normalizeRequirements(rawReqs, jdText);
       await audit(workspaceId, "requirements_extracted", { count: requirements.length });
 
-      const perCandidate: any[] = [];
-      for (let i = 0; i < resumeRows.length; i++) {
-        if (i > 0) await delay(300); // 300ms spacing between requests to avoid burst rate-limits
-        const r = resumeRows[i];
-        const { profile, mapping } = await analyzeCandidateOnce(requirements, r.content?.text || "");
-        await supabase.from("candidate_documents").update({
-          display_name: prettyName(r.file_name, (profile as any)?.name),
-        }).eq("id", r.id);
-        perCandidate.push({ docId: r.id, fileName: r.file_name, evidence: normalizeMapping(mapping, requirements) });
-      }
+      // Run candidate analysis concurrently without artificial delays
+      const perCandidate = await Promise.all(
+        resumeRows.map(async (r) => {
+          const { profile, mapping } = await analyzeCandidateOnce(requirements, r.content?.text || "");
+          await supabase.from("candidate_documents").update({
+            display_name: prettyName(r.file_name, (profile as any)?.name),
+          }).eq("id", r.id);
+          return { docId: r.id, fileName: r.file_name, evidence: normalizeMapping(mapping, requirements) };
+        })
+      );
 
-      const { gapCount } = await persistAnalysis(workspaceId, requirements, perCandidate, "gemini");
+      const { gapCount } = await persistAnalysis(workspaceId, requirements, perCandidate, "ai");
       await audit(workspaceId, "analysis_complete", { gaps: gapCount });
-      return res.status(200).json({ mode: "gemini", persisted: true, requirements: requirements.length, candidates: perCandidate.length, gaps: gapCount });
+      return { mode: "ai", persisted: true, requirements: requirements.length, candidates: perCandidate.length, gaps: gapCount };
+    })();
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("AI_DEADLINE_EXCEEDED")), 7800)
+    );
+
+    try {
+      const result: any = await Promise.race([aiPromise, timeoutPromise]);
+      return res.status(200).json(result);
     } catch (aiErr: any) {
-      console.warn("AI Pipeline error, executing automatic keyword fallback:", aiErr.message);
+      console.warn("AI Pipeline exceeded deadline or threw error, executing automatic keyword fallback:", aiErr.message);
       await audit(workspaceId, "analysis_ai_failed_fallback_triggered", { error: aiErr.message });
 
       const { requirements, perCandidate } = runKeywordFallback(null, resumeRows);
