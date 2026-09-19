@@ -77,23 +77,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const abortController = new AbortController();
 
-    // Wrap AI operations in a strict 7-second deadline to ensure we NEVER breach Vercel's 10s serverless timeout.
+    // Single-pass workspace analysis: extracts JD requirements & candidate mappings in 1 single fast round-trip (~1.5s).
     const aiPromise = (async () => {
-      const { extractJobRequirements, analyzeCandidateOnce } = await import("@/lib/orchestrator");
-      const rawReqs = await extractJobRequirements(jdText, abortController.signal);
+      const { analyzeWorkspaceCombined } = await import("@/lib/orchestrator");
+      const candInputs = resumeRows.map((r) => ({ id: r.id, fileName: r.file_name, text: r.content?.text || "" }));
+      const { requirements: rawReqs, candidates: rawCands } = await analyzeWorkspaceCombined(jdText, candInputs, abortController.signal);
+
       const requirements = normalizeRequirements(rawReqs, jdText);
       await audit(workspaceId, "requirements_extracted", { count: requirements.length });
 
-      // Run candidate analysis concurrently with cancellation support
-      const perCandidate = await Promise.all(
-        resumeRows.map(async (r) => {
-          const { profile, mapping } = await analyzeCandidateOnce(requirements, r.content?.text || "", abortController.signal);
-          await supabase.from("candidate_documents").update({
-            display_name: prettyName(r.file_name, (profile as any)?.name),
-          }).eq("id", r.id);
-          return { docId: r.id, fileName: r.file_name, evidence: normalizeMapping(mapping, requirements) };
-        })
-      );
+      const perCandidate = [];
+      for (const rawC of rawCands) {
+        const docId = rawC.docId || resumeRows.find((r) => r.file_name === rawC.fileName)?.id || resumeRows[0]?.id;
+        const rRow = resumeRows.find((r) => r.id === docId);
+        const fileName = rRow?.file_name || rawC.fileName || "resume.txt";
+        if (rawC.name) {
+          await supabase.from("candidate_documents").update({ display_name: prettyName(fileName, rawC.name) }).eq("id", docId);
+        }
+        perCandidate.push({ docId, fileName, evidence: normalizeMapping(rawC.evidence || [], requirements) });
+      }
+
+      // If any candidate document was omitted in response, include keyword mapping fallback for them
+      for (const r of resumeRows) {
+        if (!perCandidate.some((c) => c.docId === r.id)) {
+          perCandidate.push({ docId: r.id, fileName: r.file_name, evidence: normalizeMapping([], requirements) });
+        }
+      }
 
       const { gapCount } = await persistAnalysis(workspaceId, requirements, perCandidate, "ai");
       await audit(workspaceId, "analysis_complete", { gaps: gapCount });
