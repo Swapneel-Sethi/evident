@@ -1,5 +1,5 @@
 import { useRouter } from 'next/router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface ActivityEvent {
   id: string;
@@ -44,6 +44,16 @@ export default function WorkspacePage() {
       { id: `${Date.now()}-${Math.random()}`, timestamp: new Date().toISOString(), message: msg },
     ]);
   };
+
+  // Ensure workspace row exists (FK parent). Demo id "demo" stays local-only.
+  useEffect(() => {
+    if (!id || id === 'demo') return;
+    fetch('/api/workspaces', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }).catch(() => {});
+  }, [id]);
 
   const uploadJobFile = async (file: File) => {
     const form = new FormData();
