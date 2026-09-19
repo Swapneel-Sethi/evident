@@ -110,7 +110,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     })();
 
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("AI_DEADLINE_EXCEEDED")), 7200)
+      setTimeout(() => reject(new Error("AI_DEADLINE_EXCEEDED")), 4500)
     );
 
     try {
