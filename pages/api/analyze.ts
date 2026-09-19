@@ -75,17 +75,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ mode: "keyword-fallback", persisted: true, candidates: perCandidate.length });
     }
 
-    // Wrap AI operations in a strict 8-second deadline to ensure we NEVER breach Vercel's 10s serverless timeout.
+    const abortController = new AbortController();
+
+    // Wrap AI operations in a strict 7-second deadline to ensure we NEVER breach Vercel's 10s serverless timeout.
     const aiPromise = (async () => {
       const { extractJobRequirements, analyzeCandidateOnce } = await import("@/lib/orchestrator");
-      const rawReqs = await extractJobRequirements(jdText);
+      const rawReqs = await extractJobRequirements(jdText, abortController.signal);
       const requirements = normalizeRequirements(rawReqs, jdText);
       await audit(workspaceId, "requirements_extracted", { count: requirements.length });
 
-      // Run candidate analysis concurrently without artificial delays
+      // Run candidate analysis concurrently with cancellation support
       const perCandidate = await Promise.all(
         resumeRows.map(async (r) => {
-          const { profile, mapping } = await analyzeCandidateOnce(requirements, r.content?.text || "");
+          const { profile, mapping } = await analyzeCandidateOnce(requirements, r.content?.text || "", abortController.signal);
           await supabase.from("candidate_documents").update({
             display_name: prettyName(r.file_name, (profile as any)?.name),
           }).eq("id", r.id);
@@ -99,13 +101,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     })();
 
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("AI_DEADLINE_EXCEEDED")), 7800)
+      setTimeout(() => reject(new Error("AI_DEADLINE_EXCEEDED")), 7200)
     );
 
     try {
       const result: any = await Promise.race([aiPromise, timeoutPromise]);
       return res.status(200).json(result);
     } catch (aiErr: any) {
+      abortController.abort(); // Cancel any background HTTP requests immediately so Node event loop closes
       console.warn("AI Pipeline exceeded deadline or threw error, executing automatic keyword fallback:", aiErr.message);
       await audit(workspaceId, "analysis_ai_failed_fallback_triggered", { error: aiErr.message });
 

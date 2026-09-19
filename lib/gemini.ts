@@ -1,4 +1,4 @@
-// lib/gemini.ts - multi-provider AI router with fast automatic failover & ultra-low latency model priority.
+// lib/gemini.ts - multi-provider AI router with fast automatic failover & abort signal support.
 // Order: Gemini -> Groq -> Mistral (override with AI_PROVIDER_ORDER).
 // Any 429/5xx/network/bad output automatically falls over to next ultra-fast model / provider.
 
@@ -17,24 +17,36 @@ function stripFences(text: string): string {
   return cleaned;
 }
 
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
+function combineSignals(s1?: AbortSignal, s2?: AbortSignal): AbortSignal | undefined {
+  if (!s1) return s2;
+  if (!s2) return s1;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  if (s1.aborted || s2.aborted) {
+    controller.abort();
+    return controller.signal;
+  }
+  s1.addEventListener("abort", onAbort, { once: true });
+  s2.addEventListener("abort", onAbort, { once: true });
+  return controller.signal;
 }
 
-async function callGeminiSingleKey(prompt: string, apiKey: string): Promise<string> {
+async function callGeminiSingleKey(prompt: string, apiKey: string, parentSignal?: AbortSignal): Promise<string> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt + "\n\nReturn ONLY valid JSON. No markdown fences. No explanation." }] }],
     generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
   };
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 6000); // 6s timeout for Gemini
+  const timer = setTimeout(() => controller.abort(), 5000); // 5s max per call
+  const signal = combineSignals(controller.signal, parentSignal);
+
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal,
     });
     if (!res.ok) {
       const errText = await res.text();
@@ -50,15 +62,16 @@ async function callGeminiSingleKey(prompt: string, apiKey: string): Promise<stri
   }
 }
 
-async function callGemini(prompt: string): Promise<string> {
+async function callGemini(prompt: string, signal?: AbortSignal): Promise<string> {
   const rawKeys = process.env.GEMINI_API_KEY || "";
   const keys = rawKeys.split(",").map((k) => k.trim()).filter(Boolean);
   if (keys.length === 0) throw new Error("No GEMINI_API_KEY provided");
 
   const errors: string[] = [];
   for (const k of keys) {
+    if (signal?.aborted) throw new Error("Request aborted");
     try {
-      return await callGeminiSingleKey(prompt, k);
+      return await callGeminiSingleKey(prompt, k, signal);
     } catch (e: any) {
       errors.push(e.message || String(e));
     }
@@ -66,11 +79,10 @@ async function callGemini(prompt: string): Promise<string> {
   throw new Error("All Gemini keys failed: " + errors.join(" | ").substring(0, 300));
 }
 
-async function callGroq(prompt: string): Promise<string> {
+async function callGroq(prompt: string, parentSignal?: AbortSignal): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error("No GROQ_API_KEY provided");
 
-  // Ultra-fast model priority list for sub-second responses under Vercel function timeout limits
   const models = [
     process.env.GROQ_MODEL,
     "qwen/qwen3.8-27b",
@@ -82,8 +94,10 @@ async function callGroq(prompt: string): Promise<string> {
 
   const errors: string[] = [];
   for (const model of models) {
+    if (parentSignal?.aborted) throw new Error("Request aborted");
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000); // 5s timeout per model
+    const timer = setTimeout(() => controller.abort(), 4000); // 4s timeout per Groq model
+    const signal = combineSignals(controller.signal, parentSignal);
     try {
       const reqBody = {
         model,
@@ -92,13 +106,13 @@ async function callGroq(prompt: string): Promise<string> {
           { role: "system", content: "Return ONLY valid JSON. No markdown fences. No explanation." },
           { role: "user", content: prompt },
         ],
-        max_completion_tokens: 3000,
+        max_completion_tokens: 2500,
       };
       const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify(reqBody),
-        signal: controller.signal,
+        signal,
       });
       if (!res.ok) {
         const errText = await res.text();
@@ -125,7 +139,7 @@ async function callGroq(prompt: string): Promise<string> {
   throw new Error("All Groq models failed: " + errors.join(" | ").substring(0, 400));
 }
 
-async function callMistral(prompt: string): Promise<string> {
+async function callMistral(prompt: string, parentSignal?: AbortSignal): Promise<string> {
   const apiKey = process.env.MISTRAL_API_KEY;
   if (!apiKey) throw new Error("No MISTRAL_API_KEY provided");
 
@@ -137,8 +151,10 @@ async function callMistral(prompt: string): Promise<string> {
 
   const errors: string[] = [];
   for (const model of models) {
+    if (parentSignal?.aborted) throw new Error("Request aborted");
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const signal = combineSignals(controller.signal, parentSignal);
     try {
       const reqBody = {
         model,
@@ -148,13 +164,13 @@ async function callMistral(prompt: string): Promise<string> {
           { role: "user", content: prompt },
         ],
         response_format: { type: "json_object" },
-        max_tokens: 3000,
+        max_tokens: 2500,
       };
       const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify(reqBody),
-        signal: controller.signal,
+        signal,
       });
       if (!res.ok) {
         const errText = await res.text();
@@ -181,22 +197,23 @@ async function callMistral(prompt: string): Promise<string> {
   throw new Error("All Mistral models failed: " + errors.join(" | ").substring(0, 400));
 }
 
-export async function fetchGemini(prompt: string): Promise<string> {
+export async function fetchGemini(prompt: string, signal?: AbortSignal): Promise<string> {
   const errors: string[] = [];
   for (const p of providerOrder()) {
+    if (signal?.aborted) throw new Error("Request aborted");
     try {
       if (p === "gemini" && process.env.GEMINI_API_KEY) {
-        const out = await callGemini(prompt);
+        const out = await callGemini(prompt, signal);
         console.log("AI provider used: gemini");
         return out;
       }
       if (p === "groq" && process.env.GROQ_API_KEY) {
-        const out = await callGroq(prompt);
+        const out = await callGroq(prompt, signal);
         console.log("AI provider used: groq");
         return out;
       }
       if (p === "mistral" && process.env.MISTRAL_API_KEY) {
-        const out = await callMistral(prompt);
+        const out = await callMistral(prompt, signal);
         console.log("AI provider used: mistral");
         return out;
       }
