@@ -14,16 +14,16 @@ export default function Dossier() {
   const cand = state.candidates.find((c: any) => c.id === candidateId);
   if (!cand) return <Shell workspaceId={id} title="Dossier"><Err message="Candidate not found in this workspace." retry={reload} /></Shell>;
 
-  const name = cand.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " ");
+  const name = cand.displayName;
   const interviews = state.interviews.filter((x: any) => x.candidate_doc_id === candidateId);
 
   return (
     <Shell workspaceId={id} title={name} subtitle={state.workspace?.title || "Hiring workspace"}>
       <div className="font-mono-d" style={{ fontSize: 11, color: "#6a6b6b", marginBottom: 4 }}>DOCUMENT / {cand.fileName}</div>
       <div style={{ display: "flex", gap: 16, margin: "12px 0 20px 0", flexWrap: "wrap" }} className="font-mono-d">
-        <span style={{ fontSize: 13 }}><b>{cand.counts.found + cand.counts.interview}</b> EVIDENCE FOUND</span>
-        <span style={{ fontSize: 13 }}><b>{cand.counts.validate}</b> NEED VALIDATION</span>
-        <span style={{ fontSize: 13 }}><b>{cand.counts.none}</b> NOT ADDRESSED</span>
+        <span style={{ fontSize: 13 }}><b>{cand.groups.found}</b> EVIDENCE FOUND</span>
+        <span style={{ fontSize: 13 }}><b>{cand.groups.review}</b> NEEDS REVIEW</span>
+        <span style={{ fontSize: 13 }}><b>{cand.groups.none}</b> NO EVIDENCE</span>
       </div>
       <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
         {(["evidence", "interview", "report", "source"] as const).map((t) => (
@@ -84,7 +84,7 @@ export default function Dossier() {
       {tab === "report" && (
         <div className="card">
           <Eyebrow>SUMMARY</Eyebrow>
-          <p style={{ fontSize: 15 }}>{cand.counts.found + cand.counts.interview} of {cand.evidence.length} requirements contain supporting evidence. {cand.counts.validate} need validation, {cand.counts.none} have no evidence in supplied documents.</p>
+          <p style={{ fontSize: 15 }}>{cand.groups.found} of {cand.evidence.length} requirements contain supporting evidence. {cand.groups.review} need review, {cand.groups.none} have no evidence in supplied documents.</p>
           <Link href={`/workspace/${id}/report/${cand.id}`} className="btn-primary" style={{ textDecoration: "none", marginTop: 8 }}>OPEN EVIDENCE REPORT →</Link>
         </div>
       )}

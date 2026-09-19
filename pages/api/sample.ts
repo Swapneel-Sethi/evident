@@ -3,7 +3,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import supabase, { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { DEMO_JD, DEMO_CANDIDATES } from "@/lib/demoData";
-import { normalizeRequirements, normalizeMapping, persistAnalysis, audit, slugKey } from "@/lib/pipeline";
+import { normalizeRequirements, normalizeMapping, persistAnalysis, audit, slugKey, prettyName } from "@/lib/pipeline";
 
 export const config = { maxDuration: 60 };
 
@@ -21,7 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const docs: { id: string; fileName: string; text: string }[] = [];
     for (const c of DEMO_CANDIDATES) {
       const { data } = await supabase.from("candidate_documents").insert([{
-        workspace_id: wid, file_name: `${c.name}.txt`,
+        workspace_id: wid, file_name: `${c.person} (synthetic).txt`,
         content: { text: c.resumeText, source: { note: "synthetic sample" } },
       }]).select().single();
       if (data) docs.push({ id: data.id, fileName: data.file_name, text: c.resumeText });
@@ -43,7 +43,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const requirements = normalizeRequirements(await extractJobRequirements(DEMO_JD), DEMO_JD);
     const perCandidate = [];
     for (const d of docs) {
-      const { mapping } = await analyzeCandidateOnce(requirements, d.text);
+      const { profile, mapping } = await analyzeCandidateOnce(requirements, d.text);
+      await supabase.from("candidate_documents").update({
+        display_name: prettyName(d.fileName, (profile as any)?.name),
+      }).eq("id", d.id);
       perCandidate.push({ docId: d.id, fileName: d.fileName, evidence: normalizeMapping(mapping, requirements) });
     }
     await persistAnalysis(wid, requirements, perCandidate, "sample-ai");

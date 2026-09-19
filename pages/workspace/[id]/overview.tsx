@@ -38,14 +38,15 @@ export default function Overview() {
           {state.candidates.map((c: any) => (
             <Link key={c.id} href={`/workspace/${id}/candidates/${c.id}`} style={{ textDecoration: "none" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 0", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#3f4041", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600 }}>{initials(c.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " "))}</div>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#3f4041", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600 }}>{initials(c.displayName)}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " ")}</div>
+                  <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.displayName}</div>
                   <div className="font-mono-d" style={{ fontSize: 10, color: "#6a6b6b" }}>DOCUMENT / {c.fileName}</div>
                 </div>
                 <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                  <span><b className="font-mono-d">{c.counts.found + c.counts.interview}</b> <span className="font-mono-d" style={{ fontSize: 10, color: "#9f9fa0" }}>FOUND</span></span>
-                  <span><b className="font-mono-d">{c.counts.validate}</b> <span className="font-mono-d" style={{ fontSize: 10, color: "#9f9fa0" }}>VALIDATE</span></span>
+                  <span><b className="font-mono-d">{c.groups.found}</b> <span className="font-mono-d" style={{ fontSize: 10, color: "#9f9fa0" }}>FOUND</span></span>
+                  <span><b className="font-mono-d">{c.groups.review}</b> <span className="font-mono-d" style={{ fontSize: 10, color: "#9f9fa0" }}>REVIEW</span></span>
+                  <span><b className="font-mono-d">{c.groups.none}</b> <span className="font-mono-d" style={{ fontSize: 10, color: "#9f9fa0" }}>NO EVIDENCE</span></span>
                   <span className="font-mono-d" style={{ color: "#00b3dd" }}>REVIEW →</span>
                 </div>
               </div>

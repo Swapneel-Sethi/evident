@@ -1,7 +1,7 @@
 // pages/api/analyze.ts - run evidence pipeline, PERSIST canonical state.
 import type { NextApiRequest, NextApiResponse } from "next";
 import supabase, { isSupabaseConfigured } from "@/lib/supabaseClient";
-import { normalizeRequirements, normalizeMapping, persistAnalysis, audit, slugKey } from "@/lib/pipeline";
+import { normalizeRequirements, normalizeMapping, persistAnalysis, audit, slugKey, prettyName } from "@/lib/pipeline";
 
 export const config = { maxDuration: 60 };
 
@@ -56,7 +56,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await audit(workspaceId, "requirements_extracted", { count: requirements.length });
     const perCandidate = [];
     for (const r of resumeRows) {
-      const { mapping } = await analyzeCandidateOnce(requirements, r.content?.text || "");
+      // ONE Gemini call per candidate (quota-friendly: 1 + N calls total).
+      const { profile, mapping } = await analyzeCandidateOnce(requirements, r.content?.text || "");
+      await supabase.from("candidate_documents").update({
+        display_name: prettyName(r.file_name, (profile as any)?.name),
+      }).eq("id", r.id);
       perCandidate.push({ docId: r.id, fileName: r.file_name, evidence: normalizeMapping(mapping, requirements) });
     }
     const { gapCount } = await persistAnalysis(workspaceId, requirements, perCandidate, "gemini");

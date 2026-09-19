@@ -23,7 +23,7 @@ export default function Ask() {
     finally { setBusy(false); }
   };
 
-  const nameOf = (docId: string) => state?.candidates.find((c: any) => c.id === docId)?.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " ") || docId.slice(0, 8);
+  const nameOf = (docId: string) => state?.candidates.find((c: any) => c.id === docId)?.displayName || docId.slice(0, 8);
 
   return (
     <Shell workspaceId={id} title="Ask the evidence." subtitle="Search structured candidate evidence using natural language.">
@@ -44,7 +44,7 @@ export default function Ask() {
               {r.detail.map((d: any, i: number) => (
                 <div key={i} style={{ padding: "8px 0", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <b className="font-mono-d" style={{ fontSize: 12 }}>{d.skill.toUpperCase()}</b>
+                    <b className="font-mono-d" style={{ fontSize: 12 }}>{d.skill.toUpperCase()}{d.sought === "absent" ? " · ASKED ABSENT" : ""}</b>
                     <StatusChip status={d.status} />
                   </div>
                   {d.snippet && <div className="quote" style={{ marginTop: 6 }}>“{d.snippet}”</div>}

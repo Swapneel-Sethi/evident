@@ -4,7 +4,10 @@
 EVIDENT — evidence-grounded recruitment intelligence.
 
 ## Current Status
-- FINAL PASS COMPLETE: canonical persistence + premium UI + docs, deployed and E2E-verified on prod.
+- FROZEN pre-demo: all freeze items PASS (see final report). No new features/refactors/design changes from here.
+
+## Known Bugs
+- Free-tier AI 5 req/min shared quota: rapid clicking 429s with friendly message (expected).
 
 ## What Works
 - Sample-via-real-AI (7 reqs, 3 cands persisted), interview loop with persisted status transitions, NL queries, audit trail, reports, settings, 3-provider failover.

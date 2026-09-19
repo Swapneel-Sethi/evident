@@ -38,14 +38,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const results = (docs || [])
     .map((d: any) => {
       const list = byDoc.get(d.id) || [];
-      const matchDetail = wanted.map((s) => ({ skill: s, evidence: has(list, s) || null }));
+      const all = [...wanted.map((s) => ({ skill: s, sought: "present" as const })), ...excluded.map((s) => ({ skill: s, sought: "absent" as const }))];
+      const matchDetail = all.map(({ skill, sought }) => ({ skill, sought, evidence: has(list, skill) || null }));
       const blockedBy = excluded.map((s) => has(list, s)).filter(good);
-      const ok = wanted.every((s) => good(has(list, s))) && (neg ? blockedBy.length === 0 || wanted.length > 0 : true) && (wanted.length > 0 || excluded.length > 0);
+      const ok = wanted.every((s) => good(has(list, s))) && (wanted.length > 0 || excluded.length > 0);
       const include = wanted.length === 0 && excluded.length > 0 ? blockedBy.length === 0 : ok;
       return {
         candidateId: d.id, fileName: d.file_name, include,
         detail: matchDetail.map((m) => ({
-          skill: m.skill,
+          skill: m.skill, sought: m.sought,
           status: m.evidence?.status || "NO EVIDENCE FOUND",
           snippet: (m.evidence?.claim || "").slice(0, 220),
           source: m.evidence?.source || "NO SOURCE EVIDENCE FOUND",

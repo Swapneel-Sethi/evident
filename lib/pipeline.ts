@@ -82,7 +82,8 @@ export async function persistAnalysis(
       await supabase.from("evidence_states").upsert([{
         workspace_id: workspaceId, candidate_doc_id: c.docId, req_key: e.reqKey,
         requirement: e.requirement, status: e.status, claim: e.claim,
-        source: e.source || c.fileName, observation: e.observation, question: e.question,
+        source: e.source || (e.status === "NO EVIDENCE FOUND" ? "NO SOURCE EVIDENCE FOUND" : c.fileName),
+        observation: e.observation, question: e.question,
       }], { onConflict: "workspace_id,candidate_doc_id,req_key" });
     }
   }
@@ -95,4 +96,14 @@ export async function persistAnalysis(
 
 export async function audit(workspaceId: string, type: string, payload: any) {
   await supabase.from("audit_events").insert([{ workspace_id: workspaceId, event_type: type, payload }]);
+}
+
+/** Display name: AI-extracted name wins; else prettified filename. */
+export function prettyName(fileName: string, aiName?: string): string {
+  const clean = String(aiName || "").trim();
+  if (/^[A-Za-z][A-Za-z .'-]{1,60}$/.test(clean) && !/synthetic|test|resume|curriculum/i.test(clean)) return clean;
+  const base = fileName.replace(/\.[^.]+$/, "");
+  const stripped = base.replace(/^(EVIDENT[_-]?Test[_-]?Resume[_-]?|resume[_-]?)/i, "").replace(/[_-]+/g, " ").trim();
+  const titled = stripped.replace(/\b\w/g, (c) => c.toUpperCase());
+  return titled || base;
 }

@@ -15,9 +15,9 @@ export default function Candidates() {
 
   const list = state.candidates.filter((c: any) => {
     if (q && !c.fileName.toLowerCase().includes(q.toLowerCase())) return false;
-    if (filter === "validate") return c.counts.validate > 0;
-    if (filter === "found") return c.counts.found + c.counts.interview > 0;
-    if (filter === "none") return c.counts.none > 0;
+    if (filter === "validate") return c.groups.review > 0;
+    if (filter === "found") return c.groups.found > 0;
+    if (filter === "none") return c.groups.none > 0;
     return true;
   });
 
@@ -39,10 +39,11 @@ export default function Candidates() {
         {list.map((c: any) => (
           <Link key={c.id} href={`/workspace/${id}/candidates/${c.id}`} style={{ textDecoration: "none" }}>
             <div className="card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: "#00b3dd", color: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600 }}>{initials(c.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " "))}</div>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: "#00b3dd", color: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600 }}>{initials(c.displayName)}</div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 16 }}>{c.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " ")}</div>
-                <div className="font-mono-d" style={{ fontSize: 10, color: "#6a6b6b" }}>{c.counts.found + c.counts.interview} FOUND · {c.counts.validate} VALIDATE · {c.counts.none} NOT ADDRESSED</div>
+                <div style={{ fontWeight: 600, fontSize: 16 }}>{c.displayName}</div>
+                <div className="font-mono-d" style={{ fontSize: 10, color: "#6a6b6b" }}>{c.groups.found} FOUND · {c.groups.review} NEEDS REVIEW · {c.groups.none} NO EVIDENCE</div>
+                <div className="font-mono-d" style={{ fontSize: 10, color: "#4a4b4b" }}>FILE / {c.fileName}</div>
               </div>
               <span className="font-mono-d" style={{ color: "#00b3dd", fontSize: 13 }}>REVIEW EVIDENCE →</span>
             </div>

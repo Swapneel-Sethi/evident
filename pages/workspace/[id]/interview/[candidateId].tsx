@@ -13,7 +13,7 @@ export default function Interview() {
 
   const cand = state?.candidates.find((c: any) => c.id === candidateId);
   const ev = cand?.evidence.find((e: any) => e.req_key === req) || cand?.gaps[0];
-  const name = cand ? cand.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " ") : "";
+  const name = cand ? cand.displayName : "";
 
   const submit = async () => {
     if (!answer.trim() || !ev) return;

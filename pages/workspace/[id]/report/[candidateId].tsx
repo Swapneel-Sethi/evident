@@ -10,7 +10,7 @@ export default function Report() {
   if (error || !state) return <Shell workspaceId={id} title="Evidence Report"><Err message="Failed to load report." retry={reload} /></Shell>;
   const cand = state.candidates.find((c: any) => c.id === candidateId);
   if (!cand) return <Shell workspaceId={id} title="Evidence Report"><Err message="Candidate not found." retry={reload} /></Shell>;
-  const name = cand.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " ");
+  const name = cand.displayName;
   const supported = cand.evidence.filter((e: any) => e.status === "EVIDENCE FOUND" || e.status === "SUPPORTED BY INTERVIEW");
   const open = cand.evidence.filter((e: any) => e.status === "NEEDS VALIDATION" || e.status === "PARTIAL EVIDENCE" || e.status === "NO EVIDENCE FOUND");
   const related = state.activity.filter((a: any) =>

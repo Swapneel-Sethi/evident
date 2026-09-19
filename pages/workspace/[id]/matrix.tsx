@@ -39,7 +39,7 @@ export default function Matrix() {
           <tbody>
             {state.candidates.map((c: any) => (
               <tr key={c.id}>
-                <td style={{ fontWeight: 600, fontSize: 14 }}>{c.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " ")}</td>
+                <td style={{ fontWeight: 600, fontSize: 14 }}>{c.displayName}</td>
                 {state.requirements.map((r: any) => {
                   const e = evFor(c.id, r.req_key);
                   const d = DOT[e?.status] || DOT["NO EVIDENCE FOUND"];
@@ -69,11 +69,12 @@ export default function Matrix() {
             <Eyebrow>REQUIREMENT / {cell.ev.requirement.toUpperCase()}</Eyebrow>
             <div className="font-serif-d" style={{ fontSize: 30, color: "#fff", marginBottom: 8 }}>{cell.ev.status === "NO EVIDENCE FOUND" ? "No evidence." : cell.ev.status.charAt(0) + cell.ev.status.slice(1).toLowerCase() + "."}</div>
             <div style={{ marginBottom: 16 }}><StatusChip status={cell.ev.status} /></div>
-            <Field k="CANDIDATE" v={cell.cand.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " ")} />
+            <Field k="CANDIDATE" v={cell.cand.displayName} />
             <Field k="CURRENT STATUS" v={cell.ev.status} />
             <Field k="SOURCE DOCUMENT" v={cell.ev.source || "—"} />
             {cell.ev.claim && (<><div className="eyebrow" style={{ marginTop: 16 }}>EVIDENCE</div><div className="quote">“{cell.ev.claim}”</div></>)}
             {cell.ev.observation && (<><div className="eyebrow" style={{ marginTop: 16 }}>INTERPRETATION</div><p style={{ fontSize: 14, color: "#cacaca" }}>{cell.ev.observation}</p></>)}
+            {cell.ev.question && (<><div className="eyebrow" style={{ marginTop: 16 }}>VALIDATION TARGET</div><p style={{ fontSize: 14, color: "#cacaca" }}>{cell.ev.question}</p></>)}
             {(cell.ev.status === "NEEDS VALIDATION" || cell.ev.status === "PARTIAL EVIDENCE") && (
               <button className="btn-primary" style={{ marginTop: 20 }}
                 onClick={() => router.push(`/workspace/${id}/interview/${cell.cand.id}?req=${encodeURIComponent(cell.ev.req_key)}`)}>
