@@ -38,17 +38,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const fileBuffer = await fs.readFile(tmpPath);
     let extractedText = "";
     if (ext === ".pdf") {
-      try {
-        const mod: any = await import("pdf-parse");
-        const pdfParse = mod.default || mod;
-        const data = await pdfParse(fileBuffer);
-        extractedText = data.text || "";
-      } catch {
-        extractedText = "";
-      }
+      const { extractPdfText } = await import("../../lib/pdfText");
+      extractedText = await extractPdfText(fileBuffer);
       if (!extractedText.trim()) {
         await fs.unlink(tmpPath).catch(() => {});
-        return res.status(400).json({ error: "We couldn't extract readable text from this PDF. Try a text-based PDF." });
+        return res.status(400).json({ error: "We couldn't extract readable text from this PDF. If it is a scanned image, export it as a text-based PDF and retry." });
       }
     } else {
       extractedText = fileBuffer.toString("utf-8");

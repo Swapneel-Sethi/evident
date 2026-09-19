@@ -35,20 +35,7 @@ function parseForm(req: NextApiRequest): Promise<{ fields: any; files: any }> {
   });
 }
 
-/**
- * Extract plain text from a PDF buffer using pdf-parse.
- */
-async function extractPdfText(buffer: Buffer): Promise<string> {
-  try {
-    const mod: any = await import("pdf-parse");
-    const pdfParse = mod.default || mod;
-    const data = await pdfParse(buffer);
-    return data.text;
-  } catch (e) {
-    console.warn("pdf-parse failed, returning empty string.", e);
-    return "";
-  }
-}
+import { extractPdfText } from "../../lib/pdfText";
 
 /**
  * Main handler for the API route.
