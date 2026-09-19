@@ -4,7 +4,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import supabase, { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { audit, normStatus } from "@/lib/pipeline";
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 10 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse): Promise<void> {
   if (req.method === "GET") {

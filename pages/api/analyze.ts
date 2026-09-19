@@ -3,7 +3,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import supabase, { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { normalizeRequirements, normalizeMapping, persistAnalysis, audit, slugKey, prettyName } from "@/lib/pipeline";
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 10 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

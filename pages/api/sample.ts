@@ -5,7 +5,7 @@ import supabase, { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { DEMO_JD, DEMO_CANDIDATES } from "@/lib/demoData";
 import { normalizeRequirements, normalizeMapping, persistAnalysis, audit, slugKey, prettyName } from "@/lib/pipeline";
 
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 10 };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
