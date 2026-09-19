@@ -1,8 +1,6 @@
-// lib/gemini.ts - multi-provider AI router with automatic failover.
+// lib/gemini.ts - multi-provider AI router with robust automatic failover & model fallback.
 // Order: Gemini -> Groq -> Mistral (override with AI_PROVIDER_ORDER).
-// Providers without keys are skipped. Any failure (429/5xx/network/bad
-// output) falls through to the next provider. Export name kept so all
-// existing orchestrator imports keep working.
+// Any 429/5xx/network/bad output automatically falls over to the next model / provider.
 
 type Provider = "gemini" | "groq" | "mistral";
 
@@ -13,10 +11,19 @@ function providerOrder(): Provider[] {
 }
 
 function stripFences(text: string): string {
-  return text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  let cleaned = text.trim();
+  // Strip <think>...</think> blocks if reasoning model outputs them
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  // Strip markdown ```json ... ``` code blocks
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  return cleaned;
 }
 
-async function callGemini(prompt: string, apiKey: string): Promise<string> {
+function delay(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function callGeminiSingleKey(prompt: string, apiKey: string): Promise<string> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt + "\n\nReturn ONLY valid JSON. No markdown fences. No explanation." }] }],
@@ -30,85 +37,173 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
   }
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (typeof text !== "string" || !text.trim()) throw new Error("geminiKM: empty response");
+  if (typeof text !== "string" || !text.trim()) throw new Error("gemini: empty response");
   return stripFences(text);
 }
 
-async function callOpenAICompatible(
-  provider: "groq" | "mistral",
-  baseUrl: string,
-  apiKey: string,
-  model: string,
-  prompt: string,
-  useJsonMode: boolean
-): Promise<string> {
-  const reqBody: any = {
-    model,
-    temperature: provider === "groq" ? 1 : 0.2,
-    messages: [
-      { role: "system", content: "Return ONLY valid JSON. No markdown fences. No explanation." },
-      { role: "user", content: prompt },
-    ],
-  };
-  if (useJsonMode) {
-    reqBody.response_format = { type: "json_object" };
-    reqBody.max_tokens = 4000;
-  } else {
-    // Groq rejects response_format on current models; system prompt enforces JSON.
-    reqBody.max_completion_tokens = 4000;
+async function callGemini(prompt: string): Promise<string> {
+  const rawKeys = process.env.GEMINI_API_KEY || "";
+  const keys = rawKeys.split(",").map((k) => k.trim()).filter(Boolean);
+  if (keys.length === 0) throw new Error("No GEMINI_API_KEY provided");
+
+  const errors: string[] = [];
+  for (const k of keys) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        return await callGeminiSingleKey(prompt, k);
+      } catch (e: any) {
+        errors.push(e.message || String(e));
+        if (e.message?.includes("gemini_RATE_LIMITED") && attempt === 1) {
+          await delay(1200);
+          continue;
+        }
+        break;
+      }
+    }
   }
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify(reqBody),
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    if (res.status === 429) throw new Error(`${provider}_RATE_LIMITED: ` + errText.substring(0, 200));
-    throw new Error(`${provider} request failed: ${res.status} - ${errText.substring(0, 200)}`);
+  throw new Error("All Gemini keys/attempts failed: " + errors.join(" | ").substring(0, 300));
+}
+
+async function callGroq(prompt: string): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("No GROQ_API_KEY provided");
+
+  const models = [
+    process.env.GROQ_MODEL,
+    "groq/compound",
+    "openai/gpt-oss-120b",
+    "groq/compound-mini",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+  ].filter((m, i, self) => Boolean(m) && self.indexOf(m) === i) as string[];
+
+  const errors: string[] = [];
+  for (const model of models) {
+    try {
+      const reqBody = {
+        model,
+        temperature: 0.2,
+        messages: [
+          { role: "system", content: "Return ONLY valid JSON. No markdown fences. No explanation." },
+          { role: "user", content: prompt },
+        ],
+        max_completion_tokens: 4000,
+      };
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify(reqBody),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        if (res.status === 429) {
+          errors.push(`groq_${model}_RATE_LIMITED: ` + errText.substring(0, 150));
+          await delay(800);
+          continue;
+        }
+        errors.push(`groq_${model}_ERR_${res.status}: ` + errText.substring(0, 150));
+        continue;
+      }
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content;
+      if (typeof text !== "string" || !text.trim()) {
+        errors.push(`groq_${model}_EMPTY`);
+        continue;
+      }
+      return stripFences(text);
+    } catch (e: any) {
+      errors.push(`groq_${model}_EXCEPTION: ` + (e.message || String(e)).substring(0, 150));
+    }
   }
-  const data = await res.json();
-  const text = data?.choices?.[0]?.message?.content;
-  if (typeof text !== "string" || !text.trim()) throw new Error(`${provider}KM: empty response`);
-  return stripFences(text);
+  throw new Error("All Groq models failed: " + errors.join(" | ").substring(0, 400));
+}
+
+async function callMistral(prompt: string): Promise<string> {
+  const apiKey = process.env.MISTRAL_API_KEY;
+  if (!apiKey) throw new Error("No MISTRAL_API_KEY provided");
+
+  const models = [
+    process.env.MISTRAL_MODEL,
+    "mistral-small-latest",
+    "mistral-medium-latest",
+    "open-mistral-7b",
+  ].filter((m, i, self) => Boolean(m) && self.indexOf(m) === i) as string[];
+
+  const errors: string[] = [];
+  for (const model of models) {
+    try {
+      const reqBody = {
+        model,
+        temperature: 0.2,
+        messages: [
+          { role: "system", content: "Return ONLY valid JSON. No markdown fences. No explanation." },
+          { role: "user", content: prompt },
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 4000,
+      };
+      const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify(reqBody),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        if (res.status === 429) {
+          errors.push(`mistral_${model}_RATE_LIMITED`);
+          continue;
+        }
+        errors.push(`mistral_${model}_ERR_${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content;
+      if (typeof text !== "string" || !text.trim()) {
+        errors.push(`mistral_${model}_EMPTY`);
+        continue;
+      }
+      return stripFences(text);
+    } catch (e: any) {
+      errors.push(`mistral_${model}_EXCEPTION: ` + (e.message || String(e)));
+    }
+  }
+  throw new Error("All Mistral models failed: " + errors.join(" | ").substring(0, 400));
 }
 
 export async function fetchGemini(prompt: string): Promise<string> {
   const errors: string[] = [];
   for (const p of providerOrder()) {
     try {
-      if (p === "gemini") {
-        const k = process.env.GEMINI_API_KEY;
-        if (!k) continue;
-        const out = await callGemini(prompt, k);
-        console.log(`AI provider used: gemini`);
+      if (p === "gemini" && process.env.GEMINI_API_KEY) {
+        const out = await callGemini(prompt);
+        console.log("AI provider used: gemini");
         return out;
       }
-      if (p === "groq") {
-        const k = process.env.GROQ_API_KEY;
-        if (!k) continue;
-        const out = await callOpenAICompatible("groq", "https://api.groq.com/openai/v1", k, process.env.GROQ_MODEL || "openai/gpt-oss-120b", prompt, false);
-        console.log(`AI provider used: groq`);
+      if (p === "groq" && process.env.GROQ_API_KEY) {
+        const out = await callGroq(prompt);
+        console.log("AI provider used: groq");
         return out;
       }
-      if (p === "mistral") {
-        const k = process.env.MISTRAL_API_KEY;
-        if (!k) continue;
-        const out = await callOpenAICompatible("mistral", "https://api.mistral.ai/v1", k, process.env.MISTRAL_MODEL || "mistral-small-latest", prompt, true);
-        console.log(`AI provider used: mistral`);
+      if (p === "mistral" && process.env.MISTRAL_API_KEY) {
+        const out = await callMistral(prompt);
+        console.log("AI provider used: mistral");
         return out;
       }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.warn(`AI provider ${p} failed, failing over.`, msg.substring(0, 200));
-      errors.push(msg);
+    } catch (e: any) {
+      const msg = e.message || String(e);
+      console.warn(`AI provider ${p} failed, failing over to next provider.`, msg.substring(0, 200));
+      errors.push(`${p}: ${msg}`);
     }
   }
+
   if (errors.length === 0) {
-    throw new Error("GEMINI_API_KEY is not set in environment (and no GROQ_API_KEY / MISTRAL_API_KEY fallback configured)");
+    throw new Error("No AI provider API keys configured in environment (GEMINI_API_KEY / GROQ_API_KEY / MISTRAL_API_KEY).");
   }
-  if (errors.some((m) => m.includes("RATE_LIMITED"))) {
-    throw new Error("GEMINI_RATE_LIMITED: all configured AI providers are rate-limited right now. Wait ~40s and retry.");
+
+  const allRateLimited = errors.every((e) => e.includes("RATE_LIMITED") || e.includes("429"));
+  if (allRateLimited) {
+    throw new Error("GEMINI_RATE_LIMITED: All configured AI providers are currently rate-limited. Wait 20 seconds and retry.");
   }
+
   throw new Error("All AI providers failed: " + errors.join(" | ").substring(0, 500));
 }
