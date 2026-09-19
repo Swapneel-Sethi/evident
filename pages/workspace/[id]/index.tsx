@@ -45,14 +45,31 @@ export default function WorkspacePage() {
     ]);
   };
 
-  // Ensure workspace row exists (FK parent). Demo id "demo" stays local-only.
+  // Ensure workspace id is a real UUID workspace. Non-UUID ids (e.g. "demo"
+  // typed in URL) get replaced with a fresh DB-backed workspace so uploads
+  // and analysis always share the same workspace.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   useEffect(() => {
-    if (!id || id === 'demo') return;
+    if (!id || !router.isReady) return;
+    if (UUID_RE.test(id)) {
+      fetch('/api/workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      }).catch(() => {});
+      return;
+    }
+    if (id === 'demo') return; // synthetic demo page stays local-only
     fetch('/api/workspaces', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    }).catch(() => {});
+      body: JSON.stringify({}),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.workspace?.id) router.replace(`/workspace/${data.workspace.id}`);
+      })
+      .catch(() => {});
   }, [id]);
 
   const uploadJobFile = async (file: File) => {
@@ -87,11 +104,15 @@ export default function WorkspacePage() {
 
   const handleJdUpload = async () => {
     if (!jdFile) return;
+    if (!UUID_RE.test(id || '')) {
+      addActivity('JD upload blocked: not a database workspace. Use New Workspace on the home page.');
+      return;
+    }
     setLoading(true);
     try {
       addActivity('Uploading Job Description...');
-      await uploadJobFile(jdFile);
-      addActivity('Job Description uploaded.');
+      const saved = await uploadJobFile(jdFile);
+      addActivity(`Job Description stored (doc ${saved?.id || 'ok'}). Safe to Analyze now.`);
     } catch (e: any) {
       addActivity(`JD upload error: ${e.message}`);
     } finally {
@@ -101,12 +122,16 @@ export default function WorkspacePage() {
 
   const handleResumeUpload = async () => {
     if (resumeFiles.length === 0) return;
+    if (!UUID_RE.test(id || '')) {
+      addActivity('Resume upload blocked: not a database workspace. Use New Workspace on the home page.');
+      return;
+    }
     setLoading(true);
     try {
       for (const file of resumeFiles) {
         addActivity(`Uploading resume ${file.name}...`);
-        await uploadResumeFile(file);
-        addActivity(`Resume ${file.name} uploaded.`);
+        const saved = await uploadResumeFile(file);
+        addActivity(`Resume ${file.name} stored (doc ${saved?.record?.id || 'ok'}).`);
       }
     } catch (e: any) {
       addActivity(`Resume upload error: ${e.message}`);
