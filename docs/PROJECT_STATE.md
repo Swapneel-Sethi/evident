@@ -23,6 +23,7 @@ EVIDENT
 
 ## Deployment Status
 - Not deployed. Schema ready at supabase/schema.sql. .env.example present.
+- Supabase LIVE: project active, schema + RLS + grants applied, buckets created, .env.local written. Roundtrip verified (workspace → activity post → activity get).
 
 ## Latest Working Commit
 - N/A (initial commit).
