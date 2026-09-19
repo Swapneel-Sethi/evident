@@ -67,6 +67,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       content: { text: extractedText, source: { bucket: "candidate_resumes", path: storagePath, url: publicData?.publicUrl ?? null } },
     }]).select();
     if (dbError) return res.status(500).json({ error: "Failed to record resume in database" });
+    await supabase.from("audit_events").insert([{
+      workspace_id: workspaceId, event_type: "resume_uploaded",
+      payload: { fileName: originalName, chars: extractedText.length },
+    }]);
     return res.status(200).json({ record: insertData?.[0], textLength: extractedText.length });
   } catch (err: any) {
     return res.status(500).json({ error: "Internal server error" });
