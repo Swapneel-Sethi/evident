@@ -40,27 +40,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ workspaceId: wid });
     }
 
-    const { extractJobRequirements, analyzeCandidateOnce } = await import("@/lib/orchestrator");
-    const requirements = normalizeRequirements(await extractJobRequirements(DEMO_JD), DEMO_JD);
-    
-    // Run parallel candidate analyses for fast execution within Vercel timeout limits
-    const perCandidate = await Promise.all(
-      docs.map(async (d) => {
-        const { profile, mapping } = await analyzeCandidateOnce(requirements, d.text);
-        await supabase.from("candidate_documents").update({
-          display_name: prettyName(d.fileName, (profile as any)?.name),
-        }).eq("id", d.id);
-        return { docId: d.id, fileName: d.fileName, evidence: normalizeMapping(mapping, requirements) };
-      })
+    const abortController = new AbortController();
+    const aiPromise = (async () => {
+      const { analyzeWorkspaceCombined } = await import("@/lib/orchestrator");
+      const { requirements: rawReqs, candidates: rawCands } = await analyzeWorkspaceCombined(DEMO_JD, docs, abortController.signal);
+      const requirements = normalizeRequirements(rawReqs, DEMO_JD);
+
+      const perCandidate = [];
+      for (const rawC of rawCands) {
+        const docId = rawC.docId || docs.find((d) => d.fileName === rawC.fileName)?.id || docs[0]?.id;
+        const dRow = docs.find((d) => d.id === docId);
+        const fileName = dRow?.fileName || rawC.fileName || "resume.txt";
+        if (rawC.name) {
+          await supabase.from("candidate_documents").update({ display_name: prettyName(fileName, rawC.name) }).eq("id", docId);
+        }
+        perCandidate.push({ docId, fileName, evidence: normalizeMapping(rawC.evidence || [], requirements) });
+      }
+
+      for (const d of docs) {
+        if (!perCandidate.some((c) => c.docId === d.id)) {
+          perCandidate.push({ docId: d.id, fileName: d.fileName, evidence: normalizeMapping([], requirements) });
+        }
+      }
+
+      await persistAnalysis(wid, requirements, perCandidate, "sample-ai");
+      return { workspaceId: wid };
+    })();
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("AI_DEADLINE_EXCEEDED")), 4500)
     );
 
-    await persistAnalysis(wid, requirements, perCandidate, "sample-ai");
-    return res.status(200).json({ workspaceId: wid });
+    try {
+      const result: any = await Promise.race([aiPromise, timeoutPromise]);
+      return res.status(200).json(result);
+    } catch (aiErr: any) {
+      abortController.abort();
+      console.warn("Sample AI pipeline exceeded deadline or failed, using synthetic fallback:", aiErr.message);
+
+      const skills = ["Python", "FastAPI", "PostgreSQL", "Docker", "AWS"];
+      const requirements = skills.map((s) => ({ key: slugKey(s), name: s, category: "technical_skill", importance: "required", description: `Evidence of ${s}` }));
+      const perCandidate = docs.map((d, i) => ({
+        docId: d.id, fileName: d.fileName,
+        evidence: normalizeMapping(DEMO_CANDIDATES[i].evidence.map((e) => ({ ...e, requirementId: slugKey(e.requirement) })), requirements),
+      }));
+      await persistAnalysis(wid, requirements, perCandidate, "sample-synthetic-fallback");
+      return res.status(200).json({ workspaceId: wid });
+    }
   } catch (e: any) {
     console.error("Sample error:", e);
-    if (e.message?.includes("GEMINI_RATE_LIMITED")) {
-      return res.status(429).json({ error: "AI is rate-limited right now. Wait ~20 seconds and retry." });
-    }
     return res.status(500).json({ error: e.message || "Sample workspace failed. Try again in a moment." });
   }
 }
