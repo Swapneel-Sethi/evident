@@ -13,6 +13,7 @@ EVIDENT
 
 ## What Is Being Built
 - Core architecture design, initial scaffolding.
+- Zero-config synthetic demo (no Supabase, no Gemini key): /api/demo + Load Demo Workspace button.
 
 ## Known Bugs
 - None yet.

@@ -35,6 +35,7 @@ export default function WorkspacePage() {
   const [resumeFiles, setResumeFiles] = useState<File[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+  const [demoResult, setDemoResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const addActivity = (msg: string) => {
@@ -188,9 +189,34 @@ export default function WorkspacePage() {
         >
           Analyze Candidates
         </button>
+        <button
+          className="ml-2 px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-50"
+          onClick={async () => {
+            setLoading(true);
+            try {
+              addActivity('Loading synthetic demo workspace (no keys needed)...');
+              const res = await fetch('/api/demo');
+              const data = await res.json();
+              setDemoResult(JSON.stringify(data, null, 2));
+              addActivity('Demo workspace loaded: 1 JD + 3 synthetic candidates.');
+            } catch (e: any) {
+              addActivity(`Demo load error: ${e.message}`);
+            } finally {
+              setLoading(false);
+            }
+          }}
+          disabled={loading}
+        >
+          Load Demo Workspace
+        </button>
         {analysisResult && (
           <pre className="mt-4 p-2 bg-gray-100 overflow-auto rounded">
             {analysisResult}
+          </pre>
+        )}
+        {demoResult && (
+          <pre className="mt-4 p-2 bg-yellow-50 overflow-auto rounded text-xs">
+            {demoResult}
           </pre>
         )}
       </section>
