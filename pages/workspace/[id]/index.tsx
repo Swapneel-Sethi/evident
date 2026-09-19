@@ -61,7 +61,9 @@ export default function WorkspaceIngest() {
       form.append("file", file);
       form.append("workspaceId", id);
       const res = await fetch(kind === "jd" ? "/api/upload-job" : "/api/upload-resume", { method: "POST", body: form });
-      const j = await res.json();
+      const rawText = await res.text();
+      let j: any = {};
+      try { j = JSON.parse(rawText); } catch { j = { error: rawText.substring(0, 150) || "Upload failed" }; }
       if (!res.ok) throw new Error(j.error || "upload failed");
       const docId = j.id || j.record?.id;
       const check = await confirmDoc(docId, kind);
@@ -78,7 +80,9 @@ export default function WorkspaceIngest() {
     try {
       for (const s of seq) { setSteps((p) => [...p, s + "…"]); await new Promise((r) => setTimeout(r, 500)); }
       const res = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId: id }) });
-      const j = await res.json();
+      const rawText = await res.text();
+      let j: any = {};
+      try { j = JSON.parse(rawText); } catch { j = { error: rawText.substring(0, 150) || "Analysis failed" }; }
       if (!res.ok) throw new Error(j.error || "analysis failed");
       setSteps(seq.map((s) => s + " ✓"));
       setDone(true);
