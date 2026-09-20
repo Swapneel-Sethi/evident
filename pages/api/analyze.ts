@@ -32,11 +32,13 @@ function runKeywordFallback(requirementsList: any[] | null, resumeRows: any[]) {
       evidence: skills.map((s) => {
         const i = low.indexOf(s.toLowerCase());
         const found = i >= 0;
-        // Docker / shallow evidence semantics: shallow keyword mention without project context maps to NEEDS VALIDATION (NEEDS REVIEW)
-        const isShallow = s.toLowerCase() === "docker" || low.includes("listed in skills") || low.includes("compose local");
-        const status = found ? (isShallow ? "NEEDS VALIDATION" : "EVIDENCE FOUND") : "NO EVIDENCE FOUND";
+        // Docker / shallow evidence semantics: Docker shallow mention without project context -> NEEDS VALIDATION
+        // Only Docker is marked shallow when its own evidence is a bare listing (e.g. "Docker listed in skills", "Docker Compose local dev" without prod context)
+        const sLow = s.toLowerCase();
+        const isDockerShallow = sLow === "docker" && found && (low.includes("docker listed") || low.includes("listed in skills") || (low.includes("docker compose") && low.includes("local dev") && !low.includes("multi-stage") && !low.includes("production")));
+        const status = found ? (isDockerShallow ? "NEEDS VALIDATION" : "EVIDENCE FOUND") : "NO EVIDENCE FOUND";
         const obs = found
-          ? (isShallow ? "Tool listed in document; depth of experience not yet established." : "Supporting evidence present in document.")
+          ? (isDockerShallow ? "Tool listed in document; depth of experience not yet established." : "Supporting evidence present in document.")
           : "No mention found in document.";
 
         return {

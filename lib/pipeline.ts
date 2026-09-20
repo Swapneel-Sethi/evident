@@ -29,10 +29,21 @@ export function normalizeRequirements(raw: any, jobText: string) {
     };
   }).filter((r: any) => r.name);
 
-  if (arr.length > 0) return arr;
-
   const fallbackSkills = ["Python", "FastAPI", "PostgreSQL", "Docker", "AWS", "CI/CD", "Redis", "Terraform"];
   const low = jobText.toLowerCase();
+
+  if (arr.length > 0) {
+    // Authoritative merge: ensure every fallback skill explicitly mentioned in JD is present even if AI omitted it
+    const existingKeys = new Set(arr.map((r: any) => r.key));
+    const existingNames = new Set(arr.map((r: any) => r.name.toLowerCase()));
+    for (const s of fallbackSkills) {
+      if (low.includes(s.toLowerCase()) && !existingNames.has(s.toLowerCase()) && !existingKeys.has(slugKey(s))) {
+        arr.push({ key: slugKey(s), name: s, category: "technical_skill", importance: "required", description: `Evidence of ${s} in supplied documents` });
+      }
+    }
+    return arr;
+  }
+
   const matched = fallbackSkills.filter((s) => low.includes(s.toLowerCase()));
   const finalSkills = matched.length > 0 ? matched : fallbackSkills;
 
